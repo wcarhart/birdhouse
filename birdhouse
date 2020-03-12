@@ -1,0 +1,204 @@
+#!/bin/bash
+set -e
+
+source koi
+koiname=birdhouse
+koidescription="Passive tweet watcher from the command line"
+
+# colors
+__reset="\033[0m"
+__bold="\033[1m"
+__italics="\033[3m"
+__lightgrey="\033[90m"
+__yellow="\033[93m"
+__teal="\033[96m"
+
+function __verifyjq {
+	if ! $(type jq > /dev/null 2>&1); then
+		__errortext "$koiname: err: 'jq' is not in the PATH (see: https://stedolan.github.io/jq/)"
+		return 1
+	fi
+}
+
+function __verifycredentials {
+	if [[ ! -f ~/.birdhouse/token ]] ; then
+		__errortext "$koiname: warning: missing OAuth bearer token, attempting to rectify"
+		if [[ ! -f ~/.birdhouse/auth || ! -f ~/.birdhouse/secret ]] ; then
+			__errortext "$koiname: err: missing credentials"
+			__errortext "  use 'birdhouse init --force' to reinitialize"
+			return 1
+		fi
+		__generatebearertoken
+	fi
+}
+
+function __generatebearertoken {
+	local __apikey="`cat ~/.birdhouse/auth`"
+	local __secretkey="`cat ~/.birdhouse/secret`"
+
+	curl -s -u "${__apikey}:${__secretkey}" --data 'grant_type=client_credentials' 'https://api.twitter.com/oauth2/token' > ~/.birdhouse/temp
+	accesstoken=`jq -r '.access_token' ~/.birdhouse/temp`
+
+	if [[ "$accesstoken" == "null" ]] ; then
+		__errortext "$koiname: err: unable to verify your credentials, could not generate bearer token"
+		__errortext "  use 'birdhouse regenerate'     to reattempt with the existing API key and secret key"
+		__errortext "  use 'birdhouse init --force'   to start over with a new API key and secret key"
+		return 1
+	fi
+
+	echo "$accesstoken" > ~/.birdhouse/token
+	if [[ -f ~/.birdhouse/temp ]] ; then
+		rm -rf ~/.birdhouse/temp
+	fi
+}
+
+function __twurl {
+	local token="`cat ~/.birdhouse/token`"
+	local response=`curl -s -H "Authorization: Bearer ${token}" "$1"`
+
+	if [[ `jq '.[] | .errors?' <<< "$response"` != "null" ]] ; then
+		__errortext "$koiname: err: Twitter API error `jq '.errors[0].code' <<< "$response"`"
+		__errortext "  `jq -r '.errors[0].message' <<< "$response"`"
+		return 1
+	fi
+	echo "$response"
+}
+
+function init {
+	__addarg "-h" "--help" "help" "optional" "" "Set up birdhouse"
+	__addarg "" "apikey" "positionalvalue" "required" "" "Your Twitter API key"
+	__addarg "" "secretkey" "positionalvalue" "required" "" "Your Twitter API secret key"
+	__addarg "-u" "--usefiles" "flag" "optional" "" "Read apikey and secretkey from files"
+	__addarg "-f" "--force" "flag" "optional" "" "Force overwrite the existing credentials"
+	__parseargs "$@"
+
+	__verifyjq
+
+	if [[ "$force" -eq 0 ]] ; then
+		if [[ -d ~/.birdhouse ]] ; then
+			__errortext "$koiname: err: birdhouse is already initialized"
+			__errortext "  use --force to overwrite the existing credentials"
+			return 1
+		fi
+	fi
+
+	local __apikey=
+	local __secretkey=
+	if [[ "$usefiles" -eq 1 ]] ; then
+		if [[ ! -f "$apikey" ]] ; then __errortext "$koiname: err: no such file '$apikey'" ; return 1 ; fi
+		if [[ ! -f "$secretkey" ]] ; then __errortext "$koiname: err: no such file '$secretkey'" ; return 1 ; fi
+		__apikey="`cat "$apikey"`"
+		__secretkey="`cat "$secretkey"`"
+	else
+		__apikey="$apikey"
+		__secretkey="$secretkey"
+	fi
+
+	mkdir -p ~/.birdhouse
+	echo "$__apikey" > ~/.birdhouse/auth
+	echo "$__secretkey" > ~/.birdhouse/secret
+
+	__generatebearertoken
+
+	echo "Initialized credentials in ~/.birdhouse"
+}
+
+function regenerate {
+	__addarg "-h" "--help" "help" "optional" "" "Regenerate OAuth bearer token"
+	__parseargs "$@"
+
+	__verifyjq
+
+	if [[ ! -d ~/.birdhouse ]] ; then
+		__errortext "$koiname: err: birdhouse has not been initialized"
+		__errortext "  use 'birdhouse init' to initialize"
+		return 1
+	fi
+
+	if [[ ! -f ~/.birdhouse/auth || ! -f ~/.birdhouse/secret ]] ; then
+		__errortext "$koiname: err: missing credential files in ~/.birdhouse"
+		__errortext "  use 'birdhouse init --force' to reinitialize"
+		return 1
+	fi
+
+	__generatebearertoken
+}
+
+function listen {
+	__addarg "-h" "--help" "help" "optional" "" "Listen to a bird (a Twitter user)"
+	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to listen to"
+	__addarg "-r" "--refresh" "storevalue" "optional" "10" "The refresh rate, in seconds"
+	__parseargs "$@"
+
+	__verifyjq
+	__verifycredentials
+
+	for handle in "${bird[@]}" ; do
+		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
+	done
+
+	for handle in "${bird[@]}" ; do
+		__twurl "https://api.twitter.com/1.1/users/lookup.json?screen_name=${handle:1}"
+	done
+}
+
+function bird {
+	__addarg "-h" "--help" "help" "optional" "" "Get information for a bird (a Twitter user)"
+	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to get"
+	__parseargs "$@"
+
+	__verifyjq
+	__verifycredentials
+
+	for handle in "${bird[@]}" ; do
+		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
+	done
+
+	for handle in "${bird[@]}" ; do
+		local response=`__twurl "https://api.twitter.com/1.1/users/lookup.json?screen_name=${handle:1}"`
+		local name="`jq -r '.[0].name' <<< "$response"`"
+		local screenname="`jq -r '.[0].screen_name' <<< "$response"`"
+		local location="`jq -r '.[0].location' <<< "$response"`"
+		local bio="`jq -r '.[0].description' <<< "$response"`"
+		local followers="`jq -r '.[0].followers_count' <<< "$response"`"
+		local friends="`jq -r '.[0].friends_count' <<< "$response"`"
+		local tweets="`jq -r '.[0].statuses_count' <<< "$response"`"
+		local createdat=( `jq -r '.[0].created_at' <<< "$response"` )
+		echo -ne "${__bold}${name}${__reset} (${__teal}@${screenname}${__reset})"
+		if [[ "$location" != "" ]] ; then
+			echo -e " | ${__italics}${location}${__reset}"
+		else
+			echo
+		fi
+		if [[ "$bio" != "" ]] ; then
+			echo -e "${__italics}${__lightgrey}${bio}${__reset}"
+		fi
+		if [[ "$followers" != "" ]] ; then
+			local __followers=follower
+			if [[ "$followers" != "1" ]] ; then
+				__followers=followers
+			fi
+			echo -e "  ${__yellow}${followers}${__reset} ${__followers}"
+		fi
+		if [[ "$friends" != "" ]] ; then
+			local __friends=friend
+			if [[ "$friends" != "1" ]] ; then
+				__friends=friends
+			fi
+			echo -e "  ${__yellow}${friends}${__reset} ${__friends}"
+		fi
+		if [[ "$tweets" != "" ]] ; then
+			local __tweets=tweet
+			if [[ "$tweets" != "1" ]] ; then
+				__tweets=tweets
+			fi
+			echo -e "  ${__yellow}${tweets}${__reset} ${__tweets}"
+		fi
+		if [[ "$createdat" != "" ]] ; then
+			echo -e "  created on ${__teal}${createdat[1]} ${createdat[2]}, ${createdat[5]}${__reset}"
+		fi
+		echo
+	done
+}
+
+__koirun "$@"
