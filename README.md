@@ -1,1 +1,2 @@
-# birdhouse\nPassive tweet watcher from the command line
+# birdhouse
+Passive tweet watcher from the command line
