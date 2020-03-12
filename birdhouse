@@ -14,6 +14,7 @@ __yellow="\033[93m"
 __teal="\033[96m"
 
 function __verifyjq {
+	# verify jq is installed
 	if ! $(type jq > /dev/null 2>&1); then
 		__errortext "$koiname: err: 'jq' is not in the PATH (see: https://stedolan.github.io/jq/)"
 		return 1
@@ -21,6 +22,7 @@ function __verifyjq {
 }
 
 function __verifycredentials {
+	# verify the Twitter API key, API secret key, and generated OAuth2 bearer token are valid
 	if [[ ! -f ~/.birdhouse/token ]] ; then
 		__errortext "$koiname: warning: missing OAuth bearer token, attempting to rectify"
 		if [[ ! -f ~/.birdhouse/auth || ! -f ~/.birdhouse/secret ]] ; then
@@ -33,6 +35,7 @@ function __verifycredentials {
 }
 
 function __generatebearertoken {
+	# generate a OAuth2 bearer token from a Twitter API key and API secret key
 	local __apikey="`cat ~/.birdhouse/auth`"
 	local __secretkey="`cat ~/.birdhouse/secret`"
 
@@ -53,15 +56,26 @@ function __generatebearertoken {
 }
 
 function __twurl {
+	# Twitter cURL with proper authentication
+	# $1 is the Twitter URL to compute
 	local token="`cat ~/.birdhouse/token`"
 	local response=`curl -s -H "Authorization: Bearer ${token}" "$1"`
 
-	if [[ `jq '.[] | .errors?' <<< "$response"` != "null" ]] ; then
-		__errortext "$koiname: err: Twitter API error `jq '.errors[0].code' <<< "$response"`"
-		__errortext "  `jq -r '.errors[0].message' <<< "$response"`"
-		return 1
+	if [[ `jq -r 'if type=="object" then "object" else "" end' <<< "$response"` == "object" ]] ; then
+		if [[ `jq 'has("errors")' <<< "$response"` == "true" ]] ; then
+			__errortext "$koiname: err: Twitter API error `jq '.errors[0].code' <<< "$response"`"
+			__errortext "  `jq -r '.errors[0].message' <<< "$response"`"
+			return 1
+		fi
 	fi
 	echo "$response"
+}
+
+function __gettweet {
+	# get a specific tweet's text
+	# $1 is the tweet's ID
+	local response=`__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${1}&trim_user=true"`
+	echo "`jq -r '.text' <<< "$response"`"
 }
 
 function init {
@@ -138,7 +152,59 @@ function listen {
 	done
 
 	for handle in "${bird[@]}" ; do
-		__twurl "https://api.twitter.com/1.1/users/lookup.json?screen_name=${handle:1}"
+		local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}"`
+		local id="`jq -r '.[0].id' <<< "$response"`"
+	done
+}
+
+function chirps {
+	__addarg "-h" "--help" "help" "optional" "" "Get chirps (recent tweets) from a bird (a Twitter user)"
+	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to get chirps from"
+	__addarg "-n" "--num" "storevalue" "optional" "10" "The number of chirps to get"
+	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies (may reduce number of chirps)"
+	__parseargs "$@"
+
+	__verifyjq
+	__verifycredentials
+
+	for handle in "${bird[@]}" ; do
+		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
+	done
+	
+	for handle in "${bird[@]}" ; do
+		if [[ "$omitreplies" -eq 1 ]] ; then
+			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true&exclude_replies=true"`
+		else
+			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true"`
+		fi
+		for row in $(echo "$response" | jq -r '.[] | @base64') ; do
+			function __jq {
+				echo ${row} | base64 --decode | jq -r ${1}
+			}
+			local text="`__jq '.text'`"
+			local replytweet="`__jq '.in_reply_to_status_id_str'`"
+			if [[ "$replytweet" != "null" ]] ; then
+				local __response=`__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true"`
+				local __author="`__jq '.in_reply_to_screen_name'`"
+				local __text="`jq -r '.text' <<< "$__response"`"
+				# for __row in $(echo "$__response" | jq -r '.[] | @base64') ; do
+				# 	function __jqreply {
+				# 		echo ${__row} | base64 --decode | jq -r ${1}
+				# 	}
+				# 	# local __text="`__jqreply '.text'`"
+				# 	echo "${__author}: ${__text}"
+				# 	echo -n "  "
+				# done
+				echo "${__author}: ${__text}"
+				echo -n "  "
+				# echo "$__response"
+				# exit
+			fi
+			# echo "$replytweet"
+			echo -e "${__teal}${handle}${__reset}"
+			echo -e "${__italics}${text}${__reset}"
+			echo
+		done
 	done
 }
 
