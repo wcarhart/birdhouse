@@ -83,8 +83,8 @@ function __twurl {
 function __gettweet {
 	# get a specific tweet's text
 	# $1 is the tweet's ID
-	local response=`__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${1}&trim_user=true"`
-	echo "`jq -r '.text' <<< "$response"`"
+	local response=`__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${1}&trim_user=true&tweet_mode=extended"`
+	echo "`jq -r '.full_text' <<< "$response"`"
 }
 
 function __iso2epoch {
@@ -319,22 +319,22 @@ function chirps {
 	
 	for handle in "${bird[@]}" ; do
 		if [[ "$omitreplies" -eq 1 ]] ; then
-			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true&exclude_replies=true"`
+			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true&tweet_mode=extended&exclude_replies=true"`
 		else
-			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true"`
+			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true&tweet_mode=extended"`
 		fi
 		# echo "$response" | jq .
 		for row in $(echo "$response" | jq -r '.[] | @base64') ; do
 			function __jq {
 				echo ${row} | base64 --decode | jq -r ${1}
 			}
-			local text="`__jq '.text'`"
+			local text="`__jq '.full_text'`"
 			local dt="`__jq '.created_at'`"
 			local replytweet="`__jq '.in_reply_to_status_id_str'`"
 			if [[ "$replytweet" != "null" ]] ; then
-				local __response=`__twurl -n "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true"`
+				local __response=`__twurl -n "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true&tweet_mode=extended"`
 				local __author="`__jq '.in_reply_to_screen_name'`"
-				local __text="`jq -r '.text' <<< "$__response"`"
+				local __text="`jq -r '.full_text' <<< "$__response"`"
 				local __dt="`jq -r '.created_at' <<< "$__response"`"
 				__printtweet "$__text" "@$__author" "$__dt" 0
 				__printtweet "$text" "$handle" "$dt" 4
