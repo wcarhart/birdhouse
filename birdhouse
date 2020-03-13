@@ -13,6 +13,8 @@ __lightgrey="\033[90m"
 __yellow="\033[93m"
 __teal="\033[96m"
 
+# ==================== INTERNAL FUNCTIONS ====================
+
 function __verifyjq {
 	# verify jq is installed
 	if ! $(type jq > /dev/null 2>&1); then
@@ -84,6 +86,143 @@ function __gettweet {
 	local response=`__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${1}&trim_user=true"`
 	echo "`jq -r '.text' <<< "$response"`"
 }
+
+function __iso2epoch {
+	# convert a ISO-8601 datetime stamp (from Twitter) to epoch time
+	# $1 is an ISO-8601 datetime stamp in the format:
+	#   %a %b %d %X %z %Y
+	local epochtime=`date -j -u -f '%a %b %d %X %z %Y' "$1" '+%s' || date -d "$1" +'%s'`
+	echo "$epochtime"
+}
+
+function __resolvetime {
+	# resolve epoch time to a prettified English statement
+	# $1 is an ISO-8601 datetime stamp in the format:
+	#   %a %b %d %X %z %Y
+	currenttime=`date +'%s'`
+	postedtime=`__iso2epoch "$1"`
+
+	timediff=$(( $currenttime - $postedtime ))
+	if [[ $timediff -lt 60 ]] ; then
+		echo `__pluralize $timediff second`
+	elif [[ $timediff -lt 3600 ]] ; then
+		timediff=$(( $timediff / 60 ))
+		echo `__pluralize $timediff minute`
+	elif [[ $timediff -lt 86400 ]] ; then
+		timediff=$(( $timediff / 3600 ))
+		echo `__pluralize $timediff hour`
+	elif [[ $timediff -lt 604800 ]] ; then
+		timediff=$(( $timediff / 86400 ))
+		echo `__pluralize $timediff day`
+	elif [[ $timediff -lt 2592000 ]] ; then
+		timediff=$(( $timediff / 604800 ))
+		echo `__pluralize $timediff week`
+	elif [[ $timediff -lt 31556952 ]] ; then
+		timediff=$(( $timediff / 2592000 ))
+		echo `__pluralize $timediff month`
+	elif [[ $timediff -lt 315569520 ]] ; then
+		timediff=$(( $timediff / 31556952 ))
+		echo `__pluralize $timediff year`
+	elif [[ $timediff -lt 3155695200 ]] ; then
+		timediff=$(( $timediff / 315569520 ))
+		echo `__pluralize $timediff decade`
+	else
+		echo `__pluralize $timdiff century`
+	fi
+}
+
+function __pluralize {
+	# pluralize a unit (add an 's')
+	# $1 the quantity
+	# $1 the unit to pluralize
+	local result="$1 $2"
+	if [[ $1 -ne 1 ]] ; then
+		result="${result}s"
+	fi
+	echo "$result"
+}
+
+function __cleantext {
+	# clean text into terminal friendly format
+	# $@ is the text to clean
+
+	local __content=$(echo "$@" | sed \
+	-e 's/&gt;/>/g' \
+	-e "s/&#x27;/'/g" \
+	-e 's/&quot;/"/g' \
+	-e 's/\&amp;/\&/g' \
+	-e 's/<i>/_/g' \
+	-e 's;</i>;_;g' \
+	-e 's/<b>/**/g' \
+	-e 's;</b>;**;g' \
+	-e 's/<strong>/**/g' \
+	-e 's;</strong>;**;g' \
+	-e 's~&#x2F;~/~g' \
+	-e 's~<a .*\(href=\\"[^\\"]*\).*</a>~\1~g' \
+	-e 's~href=\\"~~g' \
+	-e 's~<a .*\(href="[^"]*\).*</a>~\1~g' \
+	-e 's~href="~~g')
+	if [[ `uname -s` == "Darwin" ]] ; then
+		__content=$(echo "$__content" | sed \
+		-e 's/<p>/\\\n\\\n/g' \
+		-e 's/<br>/\\\n\\\n/g' \
+		-e 's/<pre><code>/```\\\n/g' \
+		-e 's;</code></pre>;\\\n```\\\n;g' \
+		-e 's/<code>/```\\\n/g' \
+		-e 's;</code>;\\\n```\\\n;g')
+	else
+		__content=$(echo "$__content" | sed \
+		-e 's/<p>/\n\n/g' \
+		-e 's/<br>/\n\n/g' \
+		-e 's/<pre><code>/```\n/g' \
+		-e 's;</code></pre>;\n```\n;g' \
+		-e 's/<code>/```\n/g' \
+		-e 's;</code>;\n```\n;g')
+	fi
+	echo -e "$__content"
+}
+
+function __printtweet {
+	# pretty print a tweet with proper indentation
+	# $1 is the tweet text body
+	# $2 is the tweet author (handle)
+	# $3 is the tweet datetime stamp
+	# $4 is the indent length
+
+	# handle indent
+	local indent=
+	if [[ $4 -gt 0 ]] ; then indent="`printf "%0.s " $(seq 1 $4)`" ; fi
+
+	# handle text
+	local text="$1"
+	if [[ "$1" == "" || "$1" == "null" ]] ; then
+		text="<deleted>"
+	fi
+
+	# handle author
+	local author="$2"
+	if [[ "$2" == "" || "$2" == "null" ]] ; then
+		author="<deleted>"
+	fi
+
+	# handle timestamp
+	if [[ "$3" == "" || "$3" == "null" ]] ; then
+		local timestr=""
+	else
+		local timestamp="`__resolvetime "$3"` ago"
+		local timestr="| ${__yellow}${timestamp}${__reset}"
+	fi
+	if [[ "$indent" == "" ]] ; then
+		echo -n "➤ "
+		echo -e "${__teal}${author}${__reset} ${timestr}" | fold -w 80 -s | sed "s/^/${indent}/"
+		indent="`printf "%0.s " $(seq 1 2)`"
+	else
+		echo -e "${__teal}${author}${__reset} ${timestr}" | fold -w 80 -s | sed "s/^/${indent}/"
+	fi
+	echo -e "${__italics}`__cleantext "$text"`${__reset}" | fold -w 80 -s | sed "s/^/${indent}/"
+}
+
+# ==================== CLI FUNCTIONS ====================
 
 function init {
 	__addarg "-h" "--help" "help" "optional" "" "Set up birdhouse"
@@ -205,93 +344,6 @@ function chirps {
 			echo
 		done
 	done
-}
-
-function __iso2epoch {
-	# convert a ISO-8601 datetime stamp (from Twitter) to epoch time
-	# $1 is an ISO-8601 datetime stamp in the format:
-	#   %a %b %d %X %z %Y
-	local epochtime=`date -j -u -f '%a %b %d %X %z %Y' "$1" '+%s' || date -d "$1" +'%s'`
-	echo "$epochtime"
-}
-
-function __resolvetime {
-	# resolve epoch time to a prettified English statement
-	# $1 is an ISO-8601 datetime stamp in the format:
-	#   %a %b %d %X %z %Y
-	currenttime=`date +'%s'`
-	postedtime=`__iso2epoch "$1"`
-	timediff=$(( $currenttime - $postedtime ))
-	if [[ $timediff -lt 60 ]] ; then
-		echo `__pluralize $timediff second`
-	elif [[ $timediff -lt 3600 ]] ; then
-		echo `__pluralize $timediff minute`
-	elif [[ $timediff -lt 86400 ]] ; then
-		echo `__pluralize $timediff hour`
-	elif [[ $timediff -lt 604800 ]] ; then
-		echo `__pluralize $timediff day`
-	elif [[ $timediff -lt 2592000 ]] ; then
-		echo `__pluralize $timediff week`
-	elif [[ $timediff -lt 31556952 ]] ; then
-		echo `__pluralize $timediff month`
-	elif [[ $timediff -lt 315569520 ]] ; then
-		echo `__pluralize $timediff year`
-	elif [[ $timediff -lt 3155695200 ]] ; then
-		echo `__pluralize $timediff decade`
-	else
-		echo `__pluralize $timdiff century`
-	fi
-}
-
-function __pluralize {
-	# pluralize a unit (add an 's')
-	# $1 the quantity
-	# $1 the unit to pluralize
-	local result="$1 $2"
-	if [[ $1 -ne 1 ]] ; then
-		result="${result}s"
-	fi
-	echo "$result"
-}
-
-function __printtweet {
-	# pretty print a tweet with proper indentation
-	# $1 is the tweet text body
-	# $2 is the tweet author (handle)
-	# $3 is the tweet datetime stamp
-	# $4 is the indent length
-
-	# handle indent
-	local indent=
-	if [[ $4 -gt 0 ]] ; then indent="`printf "%0.s " $(seq 1 $4)`" ; fi
-
-	# handle text
-	local text="$1"
-	if [[ "$1" == "" || "$1" == "null" ]] ; then
-		text="<deleted>"
-	fi
-
-	# handle author
-	local author="$2"
-	if [[ "$2" == "" || "$2" == "null" ]] ; then
-		author="<deleted>"
-	fi
-
-	# handle timestamp
-	# local timestamp="`__resolvetime "$3"` ago"
-	local timestamp="$3"
-	local timestr="| ${__yellow}${timestamp}${__reset}"
-	if [[ "$3" == "" || "$3" == "null" ]] ; then
-		timestr=""
-	fi
-	if [[ "$indent" == "" ]] ; then
-		echo -n "➤ "
-		echo -e "${__teal}${author}${__reset} ${timestr}" | fold -w 80 -s | sed "s/^/${indent}/"
-		indent="`printf "%0.s " $(seq 1 2)`"
-	else
-		echo -e "${__teal}${author}${__reset} ${timestr}" | fold -w 80 -s | sed "s/^/${indent}/"
-	fi
-	echo -e "${__italics}${text}${__reset}" | fold -w 80 -s | sed "s/^/${indent}/"
 }
 
 function bird {
