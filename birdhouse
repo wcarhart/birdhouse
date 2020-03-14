@@ -204,6 +204,7 @@ function __printtweet {
 	# $2 is the tweet author (handle)
 	# $3 is the tweet datetime stamp
 	# $4 is the indent length
+	# $5 is the link text
 
 	# handle indent
 	local indent=
@@ -223,7 +224,6 @@ function __printtweet {
 
 	# handle timestamp
 	if [[ "$3" == ABSOLUTE* ]] ; then
-		# local e=( `echo "${3#*ABSOLUTE}"` )
 		local epochtime=`__iso2epoch "${3#*ABSOLUTE}"`
 		local e=( `date -j -f '%s' "$epochtime" '%a %b %d %X %z %Y'|| date -d "$epochtime" +'%a %b %d %X %z %Y'` )
 		local timestr="| ${__yellow}${e[1]} ${e[2]}, ${e[5]} @ ${e[3]}${__reset}"
@@ -233,12 +233,19 @@ function __printtweet {
 		local timestamp="`__resolvetime "$3"` ago"
 		local timestr="| ${__yellow}${timestamp}${__reset}"
 	fi
+
+	# handle link
+	local linktext=
+	if [[ $5 != "" ]] ; then
+		linktext="| ${__lightgrey}$5${__reset}"
+	fi
+
 	if [[ "$indent" == "" ]] ; then
 		echo -n "➤ "
-		echo -e "${__teal}${author}${__reset} ${timestr}" | fold -w 80 -s | sed "s/^/${indent}/"
+		echo -e "${__teal}${author}${__reset} ${timestr} ${linktext}" | sed "s/^/${indent}/"
 		indent="`printf "%0.s " $(seq 1 2)`"
 	else
-		echo -e "${__teal}${author}${__reset} ${timestr}" | fold -w 80 -s | sed "s/^/${indent}/"
+		echo -e "${__teal}${author}${__reset} ${timestr} ${linktext}" | sed "s/^/${indent}/"
 	fi
 	echo -e "${__italics}`__cleantext "$text"`${__reset}" | fold -w 80 -s | sed "s/^/${indent}/"
 }
@@ -251,8 +258,12 @@ function __processtweets {
 	# process a tweet JSON response
 	# $1 is the JSON response to process
 	# $2 is whether or not to use an absolute timestamp - 0 is relative, 1 is absolute
+	# $3 is whether or not to include a link to the tweet - 0 is no, 1 is yes
+
 	local response="$1"
 	local absolute="$2"
+	local link="$3"
+
 	for row in $(echo "$response" | jq -r '.[] | @base64') ; do
 		function __jq {
 			echo ${row} | base64 --decode | jq -r ${1}
@@ -267,16 +278,22 @@ function __processtweets {
 			dt="ABSOLUTE$dt"
 		fi
 		local handle="@`__jq '.user.screen_name'`"
+		if [[ $link -eq 1 ]] ; then
+			local linktext="https://twitter.com/${handle:1}/status/`__jq '.id_str'`"
+		fi
 		local replytweet="`__jq '.in_reply_to_status_id_str'`"
 		if [[ "$replytweet" != "null" ]] ; then
 			local __response=`__twurl -n "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true&tweet_mode=extended"`
 			local __author="`__jq '.in_reply_to_screen_name'`"
 			local __text="`jq -r '.full_text' <<< "$__response"`"
 			local __dt="`jq -r '.created_at' <<< "$__response"`"
-			__printtweet "$__text" "@$__author" "$__dt" 0
-			__printtweet "$text" "$handle" "$dt" 4
+			if [[ $link -eq 1 ]] ; then
+				local __linktext="https://twitter.com/${__author}/status/${replytweet}"
+			fi
+			__printtweet "$__text" "@$__author" "$__dt" 0 "$__linktext"
+			__printtweet "$text" "$handle" "$dt" 4 "$linktext"
 		else
-			__printtweet "$text" "$handle" "$dt" 0
+			__printtweet "$text" "$handle" "$dt" 0 "$linktext"
 		fi
 		echo
 	done
@@ -354,6 +371,7 @@ function listen {
 	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
 	__addarg "-s" "--startfromnow" "flag" "optional" "" "Start streaming from now"
 	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
+	__addarg "-l" "--link" "flag" "optional" "" "Include a link to the tweet"
 	__parseargs "$@"
 
 	__verifyjq
@@ -378,15 +396,15 @@ function listen {
 		for handle in "${bird[@]}" ; do
 			if [[ "$omitreplies" -eq 1 ]] ; then
 				if [[ "$started" -eq 0 ]] ; then
-					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&tweet_mode=extended&exclude_replies=true"`
-				else
 					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=1&tweet_mode=extended&exclude_replies=true"`
+				else
+					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&tweet_mode=extended&exclude_replies=true"`
 				fi
 			else
 				if [[ "$started" -eq 1 ]] ; then
-					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&tweet_mode=extended"`
+					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=1&tweet_mode=extended"`
 				else
-					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=1&tweet_mode=extended&exclude_replies=true"`
+					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&tweet_mode=extended&exclude_replies=true"`
 				fi
 			fi
 			for row in $(echo "$response" | jq -r '.[] | @base64') ; do
@@ -419,7 +437,7 @@ function listen {
 		done
 		started=1
 		for tweet in "${tweetbuffer[@]}" ; do
-			__processtweets "$tweet" "$absolute"
+			__processtweets "$tweet" "$absolute" "$link"
 		done
 		sleep "$refresh"
 	done
@@ -431,6 +449,7 @@ function chirps {
 	__addarg "-n" "--num" "storevalue" "optional" "10" "The number of chirps to get"
 	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
 	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
+	__addarg "-l" "--link" "flag" "optional" "" "Include a link to the tweet"
 	__parseargs "$@"
 
 	__verifyjq
@@ -448,7 +467,7 @@ function chirps {
 		else
 			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&tweet_mode=extended"`
 		fi
-		__processtweets "$response" "$absolute"
+		__processtweets "$response" "$absolute" "$link"
 	done
 }
 
