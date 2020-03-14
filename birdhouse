@@ -83,7 +83,7 @@ function __twurl {
 function __gettweet {
 	# get a specific tweet
 	# $1 is the tweet's ID
-	local response=`__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${1}&trim_user=true&tweet_mode=extended"`
+	local response=`__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${1}&tweet_mode=extended"`
 	echo "$response"
 }
 
@@ -257,7 +257,11 @@ function __processtweets {
 		function __jq {
 			echo ${row} | base64 --decode | jq -r ${1}
 		}
-		local text="`__jq '.full_text'`"
+		if [[ `jq 'has("retweeted_status")' <<< "$(echo $row | base64 --decode)"` == "true" ]] ; then
+			local text="RT `__jq '.retweeted_status.full_text'`"
+		else
+			local text="`__jq '.full_text'`"
+		fi
 		local dt="`__jq '.created_at'`"
 		if [[ "$absolute" -eq 1 ]] ; then
 			dt="ABSOLUTE$dt"
@@ -279,6 +283,9 @@ function __processtweets {
 }
 
 # ==================== CLI FUNCTIONS ====================
+
+# TODO: implement streaming from hashtags
+# TODO: add option for printing actual link to tweet
 
 function init {
 	__addarg "-h" "--help" "help" "optional" "" "Set up birdhouse"
@@ -410,6 +417,7 @@ function listen {
 				fi
 			done
 		done
+		started=1
 		for tweet in "${tweetbuffer[@]}" ; do
 			__processtweets "$tweet" "$absolute"
 		done
@@ -436,9 +444,9 @@ function chirps {
 	
 	for handle in "${bird[@]}" ; do
 		if [[ "$omitreplies" -eq 1 ]] ; then
-			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true&tweet_mode=extended&exclude_replies=true"`
+			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&tweet_mode=extended&exclude_replies=true"`
 		else
-			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true&tweet_mode=extended"`
+			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&tweet_mode=extended"`
 		fi
 		__processtweets "$response" "$absolute"
 	done
