@@ -314,6 +314,9 @@ function listen {
 
 	if [[ "$refresh" -lt 10 ]] ; then __errortext "$koiname: err: minimum refresh rate is 10 seconds" ; return 1 ; fi
 
+	# TODO: make exit cleanly with ^C
+	# TODO: modularize this code (it's repeated in chirps function)
+	# TODO: sort tweets that are streamed in
 	while : ; do
 		for handle in "${bird[@]}" ; do
 			if [[ "$omitreplies" -eq 1 ]] ; then
@@ -349,6 +352,7 @@ function listen {
 }
 
 function chirps {
+	# TODO: limit to 200 tweets (or whatever Twitter caps it at)
 	__addarg "-h" "--help" "help" "optional" "" "Get chirps (recent tweets) from a bird (a Twitter user)"
 	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to get chirps from"
 	__addarg "-n" "--num" "storevalue" "optional" "10" "The number of chirps to get"
