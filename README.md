@@ -1,5 +1,7 @@
-# birdhouse
-Passive tweet watcher from the command line
+<p align="center"><img alt="birdhouse logo" src="logo.png" /></p>
+
+<h1 align="center">birdhouse</h1>
+<p align="center">Passive tweet watcher from the command line</p>
 
 ## Install
 Install with homebrew:
