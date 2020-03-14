@@ -81,17 +81,17 @@ function __twurl {
 }
 
 function __gettweet {
-	# get a specific tweet's text
+	# get a specific tweet
 	# $1 is the tweet's ID
 	local response=`__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${1}&trim_user=true&tweet_mode=extended"`
-	echo "`jq -r '.full_text' <<< "$response"`"
+	echo "$response"
 }
 
 function __iso2epoch {
 	# convert a ISO-8601 datetime stamp (from Twitter) to epoch time
 	# $1 is an ISO-8601 datetime stamp in the format:
 	#   %a %b %d %X %z %Y
-	local epochtime=`date -j -u -f '%a %b %d %X %z %Y' "$1" '+%s' || date -d "$1" +'%s'`
+	local epochtime=`date -j -u -f '%a %b %d %X %z %Y' "$1" '+%s' || date -u -d "$1" +'%s'`
 	echo "$epochtime"
 }
 
@@ -189,7 +189,11 @@ function __resolvetcolinks {
 	local foundlinks=( `grep -o 'https://t.co/[a-zA-Z0-9]*' <<< "$__content"` )
 	for link in "${foundlinks[@]}" ; do
 		resultinglink=`curl -s -D - "$link" | grep location: | sed 's/^location: //g' | tr '\r' ' '`
+		resultinglink=`sed 's/\&/%26/g' <<< "$resultinglink"`
+		resultinglink=`sed 's/~/%7e/g' <<< "$resultinglink"`
 		__content=`sed -- 's~'"$link"'~'"$resultinglink"'~g' <<< "$__content"`
+		__content=`sed 's/%26/\&/g' <<< "$__content"`
+		__content=`sed 's/%7e/~/g' <<< "$__content"`
 	done
 	echo "$__content"
 }
@@ -218,7 +222,12 @@ function __printtweet {
 	fi
 
 	# handle timestamp
-	if [[ "$3" == "" || "$3" == "null" ]] ; then
+	if [[ "$3" == ABSOLUTE* ]] ; then
+		# local e=( `echo "${3#*ABSOLUTE}"` )
+		local epochtime=`__iso2epoch "${3#*ABSOLUTE}"`
+		local e=( `date -j -f '%s' "$epochtime" '%a %b %d %X %z %Y'|| date -d "$epochtime" +'%a %b %d %X %z %Y'` )
+		local timestr="| ${__yellow}${e[1]} ${e[2]}, ${e[5]} @ ${e[3]}${__reset}"
+	elif [[ "$3" == "" || "$3" == "null" ]] ; then
 		local timestr=""
 	else
 		local timestamp="`__resolvetime "$3"` ago"
@@ -232,6 +241,41 @@ function __printtweet {
 		echo -e "${__teal}${author}${__reset} ${timestr}" | fold -w 80 -s | sed "s/^/${indent}/"
 	fi
 	echo -e "${__italics}`__cleantext "$text"`${__reset}" | fold -w 80 -s | sed "s/^/${indent}/"
+}
+
+function __listenexit {
+	echo " exiting..."
+}
+
+function __processtweets {
+	# process a tweet JSON response
+	# $1 is the JSON response to process
+	# $2 is whether or not to use an absolute timestamp - 0 is relative, 1 is absolute
+	local response="$1"
+	local absolute="$2"
+	for row in $(echo "$response" | jq -r '.[] | @base64') ; do
+		function __jq {
+			echo ${row} | base64 --decode | jq -r ${1}
+		}
+		local text="`__jq '.full_text'`"
+		local dt="`__jq '.created_at'`"
+		if [[ "$absolute" -eq 1 ]] ; then
+			dt="ABSOLUTE$dt"
+		fi
+		local handle="@`__jq '.user.screen_name'`"
+		local replytweet="`__jq '.in_reply_to_status_id_str'`"
+		if [[ "$replytweet" != "null" ]] ; then
+			local __response=`__twurl -n "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true&tweet_mode=extended"`
+			local __author="`__jq '.in_reply_to_screen_name'`"
+			local __text="`jq -r '.full_text' <<< "$__response"`"
+			local __dt="`jq -r '.created_at' <<< "$__response"`"
+			__printtweet "$__text" "@$__author" "$__dt" 0
+			__printtweet "$text" "$handle" "$dt" 4
+		else
+			__printtweet "$text" "$handle" "$dt" 0
+		fi
+		echo
+	done
 }
 
 # ==================== CLI FUNCTIONS ====================
@@ -249,7 +293,7 @@ function init {
 	if [[ "$force" -eq 0 ]] ; then
 		if [[ -d ~/.birdhouse ]] ; then
 			__errortext "$koiname: err: birdhouse is already initialized"
-			__errortext "  use --force to overwrite the existing credentials"
+			__errortext "  use 'birdhouse init --force' to overwrite the existing credentials"
 			return 1
 		fi
 	fi
@@ -300,7 +344,9 @@ function listen {
 	__addarg "-h" "--help" "help" "optional" "" "Listen to a bird (a Twitter user)"
 	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to listen to"
 	__addarg "-r" "--refresh" "storevalue" "optional" "10" "The refresh rate, in seconds"
-	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies (may reduce number of chirps)"
+	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
+	__addarg "-s" "--startfromnow" "flag" "optional" "" "Start streaming from now"
+	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
 	__parseargs "$@"
 
 	__verifyjq
@@ -314,49 +360,69 @@ function listen {
 
 	if [[ "$refresh" -lt 10 ]] ; then __errortext "$koiname: err: minimum refresh rate is 10 seconds" ; return 1 ; fi
 
-	# TODO: make exit cleanly with ^C
-	# TODO: modularize this code (it's repeated in chirps function)
-	# TODO: sort tweets that are streamed in
+	trap __listenexit EXIT
+
+	local started=0
+	local seentweets=
 	while : ; do
+		local streamoutput=
+		local tweetbuffer=( )
+		local timestamps=( )
 		for handle in "${bird[@]}" ; do
 			if [[ "$omitreplies" -eq 1 ]] ; then
-				local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&trim_user=true&tweet_mode=extended&exclude_replies=true"`
+				if [[ "$started" -eq 0 ]] ; then
+					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&tweet_mode=extended&exclude_replies=true"`
+				else
+					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=1&tweet_mode=extended&exclude_replies=true"`
+				fi
 			else
-				local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&trim_user=true&tweet_mode=extended"`
+				if [[ "$started" -eq 1 ]] ; then
+					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&tweet_mode=extended"`
+				else
+					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=1&tweet_mode=extended&exclude_replies=true"`
+				fi
 			fi
 			for row in $(echo "$response" | jq -r '.[] | @base64') ; do
 				function __jq {
 					echo ${row} | base64 --decode | jq -r ${1}
 				}
-				local tweetid="`__jq '.id'`"
-				if [[ "${chirps[@]}" != *$tweetid* ]] ; then
-					chirps=( "${chirps[@]}" "$tweetid" )
-					local text="`__jq '.full_text'`"
-					local dt="`__jq '.created_at'`"
-					local replytweet="`__jq '.in_reply_to_status_id_str'`"
-					if [[ "$replytweet" != "null" ]] ; then
-						local __response=`__twurl -n "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true&tweet_mode=extended"`
-						local __author="`__jq '.in_reply_to_screen_name'`"
-						local __text="`jq -r '.full_text' <<< "$__response"`"
-						local __dt="`jq -r '.created_at' <<< "$__response"`"
-						__printtweet "$__text" "@$__author" "$__dt" 0
-						__printtweet "$text" "$handle" "$dt" 4
-					else
-						__printtweet "$text" "$handle" "$dt" 0
+				local ts=$(__iso2epoch "`__jq '.created_at'`")
+				local id=`__jq '.id'`
+				if [[ "$started" -eq 0 && "$startfromnow" -eq 1 ]] ; then
+					seentweets="$seentweets $id"
+				fi
+				if [[ "$seentweets" == *$id* ]] ; then
+					continue
+				fi
+				seentweets="$seentweets $id"
+				local placed=0
+				for i in "${!tweetbuffer[@]}" ; do
+					if [[ "${timestamps[$i]}" -gt "$ts" ]] ; then
+						placed=1
+						tweetbuffer=( "${tweetbuffer[@]:0:$i}" "[`echo ${row} | base64 --decode`]" "${tweetbuffer[@]:$i}" )
+						timestamps=( "${timestamps[@]:0:$i}" "$ts" "${timestamps[@]:$i}" )
+						break
 					fi
+				done
+				if [[ $placed -eq 0 ]] ; then
+					tweetbuffer=( "${tweetbuffer[@]}" "[`echo ${row} | base64 --decode`]" )
+					timestamps=( "${timestamps[@]}" "$ts" )
 				fi
 			done
+		done
+		for tweet in "${tweetbuffer[@]}" ; do
+			__processtweets "$tweet" "$absolute"
 		done
 		sleep "$refresh"
 	done
 }
 
 function chirps {
-	# TODO: limit to 200 tweets (or whatever Twitter caps it at)
 	__addarg "-h" "--help" "help" "optional" "" "Get chirps (recent tweets) from a bird (a Twitter user)"
 	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to get chirps from"
 	__addarg "-n" "--num" "storevalue" "optional" "10" "The number of chirps to get"
-	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies (may reduce number of chirps)"
+	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
+	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
 	__parseargs "$@"
 
 	__verifyjq
@@ -365,6 +431,8 @@ function chirps {
 	for handle in "${bird[@]}" ; do
 		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
 	done
+
+	if [[ "$num" -gt 200 ]] ; then __errortext "$koiname: err: cannot get more than 200 chirps" ; return 1 ;fi
 	
 	for handle in "${bird[@]}" ; do
 		if [[ "$omitreplies" -eq 1 ]] ; then
@@ -372,25 +440,7 @@ function chirps {
 		else
 			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true&tweet_mode=extended"`
 		fi
-		for row in $(echo "$response" | jq -r '.[] | @base64') ; do
-			function __jq {
-				echo ${row} | base64 --decode | jq -r ${1}
-			}
-			local text="`__jq '.full_text'`"
-			local dt="`__jq '.created_at'`"
-			local replytweet="`__jq '.in_reply_to_status_id_str'`"
-			if [[ "$replytweet" != "null" ]] ; then
-				local __response=`__twurl -n "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true&tweet_mode=extended"`
-				local __author="`__jq '.in_reply_to_screen_name'`"
-				local __text="`jq -r '.full_text' <<< "$__response"`"
-				local __dt="`jq -r '.created_at' <<< "$__response"`"
-				__printtweet "$__text" "@$__author" "$__dt" 0
-				__printtweet "$text" "$handle" "$dt" 4
-			else
-				__printtweet "$text" "$handle" "$dt" 0
-			fi
-			echo
-		done
+		__processtweets "$response" "$absolute"
 	done
 }
 
