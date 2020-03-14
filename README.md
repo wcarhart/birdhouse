@@ -7,18 +7,16 @@ Install with homebrew:
 brew tap wcarhart/tools
 brew install birdhouse
 ```
-`birdhouse` replies on the Twitter API. You'll need proper API credentials to use it. If you need an API key, get one [here](https://developer.twitter.com/en/apply-for-access).
+Birdhouse replies on the Twitter API. You'll need proper API credentials to use it. If you need an API key, get one [here](https://developer.twitter.com/en/apply-for-access).
 
 Install your API keys with the `birdhouse init` command:
 ```bash
 birdhouse init $APIKEY $APISECRETKEY
 ```
-You can use the `--usefiles` option if you want `birdhouse` to read your API keys from files, so you don't log your API keys in your history.
+You can use the `--usefiles` option if you want to read your API keys from files, so you don't log your API keys in your history. If you need to refresh your access token, you can use `birdhouse regenerate`. If you need to install a new set of API keys, you can overwrite the currently installed ones with `birdhouse init --force`.
 
-If you need to refresh your access token, you can use `birdhouse regenerate`. If you need to install a new set of API keys, you can overwrite the currently installed ones with `birdhouse init --force`.
-
-### Usage
-You can view the complete documentation with `birdhouse help --verbose`. Here are a few key features.
+## Usage
+You can view the complete documentation with `birdhouse help --verbose`. You can also view the documentation for each command with `birdhouse COMMAND --help`. Here are a few key features!
 
 ### Stream tweets
 ```bash
