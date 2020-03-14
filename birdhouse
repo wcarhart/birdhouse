@@ -179,8 +179,7 @@ function __cleantext {
 		-e 's/<code>/```\n/g' \
 		-e 's;</code>;\n```\n;g')
 	fi
-	echo -e "$__content"
-	sed 's`^.*\(https://t.co/[a-zA-Z0-9]*\).*$`\1`g'
+	__resolvetcolinks "$__content"
 }
 
 function __resolvetcolinks {
@@ -188,19 +187,8 @@ function __resolvetcolinks {
 	local __content="$1"
 	local foundlinks=( `grep -o 'https://t.co/[a-zA-Z0-9]*' <<< "$__content"` )
 	for link in "${foundlinks[@]}" ; do
-		resultinglink=`curl -s -D - "$link" | grep location: | sed 's/^location: //g'`
-		echo "sed -e s;${link};${resultinglink};"
-	done
-	# echo "$__content"
-}
-
-function __resolvetcolinks {
-	# translate https://t.co links into destination URLs
-	local __content="$1"
-	local foundlinks=( `grep -o 'https://t.co/[a-zA-Z0-9]*' <<< "$__content"` )
-	for link in "${foundlinks[@]}" ; do
-		resultinglink=`curl -s -D - "$link" | grep location: | sed 's/^location: //g'`
-		sed "sA${link}A${resultinglink}Ag" <<< "$__content"
+		resultinglink=`curl -s -D - "$link" | grep location: | sed 's/^location: //g' | tr '\r' ' '`
+		__content=`sed -- 's~'"$link"'~'"$resultinglink"'~g' <<< "$__content"`
 	done
 	echo "$__content"
 }
