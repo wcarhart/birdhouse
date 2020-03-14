@@ -184,6 +184,7 @@ function __cleantext {
 
 function __resolvetcolinks {
 	# translate https://t.co links into destination URLs
+	# $1 is the tweet text in which to resolve t.co links
 	local __content="$1"
 	local foundlinks=( `grep -o 'https://t.co/[a-zA-Z0-9]*' <<< "$__content"` )
 	for link in "${foundlinks[@]}" ; do
@@ -299,18 +300,51 @@ function listen {
 	__addarg "-h" "--help" "help" "optional" "" "Listen to a bird (a Twitter user)"
 	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to listen to"
 	__addarg "-r" "--refresh" "storevalue" "optional" "10" "The refresh rate, in seconds"
+	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies (may reduce number of chirps)"
 	__parseargs "$@"
 
 	__verifyjq
 	__verifycredentials
 
+	local chirps=( )
+
 	for handle in "${bird[@]}" ; do
 		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
 	done
 
-	for handle in "${bird[@]}" ; do
-		local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}"`
-		local id="`jq -r '.[0].id' <<< "$response"`"
+	if [[ "$refresh" -lt 10 ]] ; then __errortext "$koiname: err: minimum refresh rate is 10 seconds" ; return 1 ; fi
+
+	while : ; do
+		for handle in "${bird[@]}" ; do
+			if [[ "$omitreplies" -eq 1 ]] ; then
+				local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&trim_user=true&tweet_mode=extended&exclude_replies=true"`
+			else
+				local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&trim_user=true&tweet_mode=extended"`
+			fi
+			for row in $(echo "$response" | jq -r '.[] | @base64') ; do
+				function __jq {
+					echo ${row} | base64 --decode | jq -r ${1}
+				}
+				local tweetid="`__jq '.id'`"
+				if [[ "${chirps[@]}" != *$tweetid* ]] ; then
+					chirps=( "${chirps[@]}" "$tweetid" )
+					local text="`__jq '.full_text'`"
+					local dt="`__jq '.created_at'`"
+					local replytweet="`__jq '.in_reply_to_status_id_str'`"
+					if [[ "$replytweet" != "null" ]] ; then
+						local __response=`__twurl -n "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true&tweet_mode=extended"`
+						local __author="`__jq '.in_reply_to_screen_name'`"
+						local __text="`jq -r '.full_text' <<< "$__response"`"
+						local __dt="`jq -r '.created_at' <<< "$__response"`"
+						__printtweet "$__text" "@$__author" "$__dt" 0
+						__printtweet "$text" "$handle" "$dt" 4
+					else
+						__printtweet "$text" "$handle" "$dt" 0
+					fi
+				fi
+			done
+		done
+		sleep "$refresh"
 	done
 }
 
@@ -334,7 +368,6 @@ function chirps {
 		else
 			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&trim_user=true&tweet_mode=extended"`
 		fi
-		# echo "$response" | jq .
 		for row in $(echo "$response" | jq -r '.[] | @base64') ; do
 			function __jq {
 				echo ${row} | base64 --decode | jq -r ${1}
@@ -379,6 +412,9 @@ function bird {
 		local friends="`jq -r '.[0].friends_count' <<< "$response"`"
 		local tweets="`jq -r '.[0].statuses_count' <<< "$response"`"
 		local createdat=( `jq -r '.[0].created_at' <<< "$response"` )
+		if [[ "$name" == "" || "$name" == "null" ]] && [[ "$screen_name" == "" || "$screen_name" == "null" ]]; then
+			return 1
+		fi
 		echo -ne "${__bold}${name}${__reset} (${__teal}@${screenname}${__reset})"
 		if [[ "$location" != "" ]] ; then
 			echo -e " | ${__italics}${location}${__reset}"
