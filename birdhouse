@@ -302,7 +302,6 @@ function __processtweets {
 # ==================== CLI FUNCTIONS ====================
 
 # TODO: implement streaming from hashtags
-# TODO: add option for printing actual link to tweet
 
 function init {
 	__addarg "-h" "--help" "help" "optional" "" "Set up birdhouse"
