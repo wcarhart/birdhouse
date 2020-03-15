@@ -364,8 +364,8 @@ function regenerate {
 }
 
 function listen {
-	__addarg "-h" "--help" "help" "optional" "" "Listen to a bird (a Twitter user)"
-	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to listen to"
+	__addarg "-h" "--help" "help" "optional" "" "Listen to a bird (a Twitter user) or hashtag"
+	__addarg "" "source" "positionalarray" "required" "" "The bird(s) or hashtag(s) to listen to"
 	__addarg "-r" "--refresh" "storevalue" "optional" "10" "The refresh rate, in seconds"
 	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
 	__addarg "-s" "--startfromnow" "flag" "optional" "" "Start streaming from now"
@@ -376,23 +376,30 @@ function listen {
 	__verifyjq
 	__verifycredentials
 
-	local chirps=( )
-
-	for handle in "${bird[@]}" ; do
-		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
+	for item in "${source[@]}" ; do
+		if [[ "$item" != @* && "$item" != '#'* ]] ; then
+			__errortext "$koiname: err: sources must start with either an '@' for Twitter handles or '#' for hashtags"
+			return 1
+		fi
 	done
 
 	if [[ "$refresh" -lt 10 ]] ; then __errortext "$koiname: err: minimum refresh rate is 10 seconds" ; return 1 ; fi
 
 	trap __listenexit EXIT
 
-	local started=0
 	local seentweets=
 	while : ; do
 		local streamoutput=
 		local tweetbuffer=( )
 		local timestamps=( )
+		local apiendpoint=
 		for handle in "${bird[@]}" ; do
+			if [[ "${item:0:1}" == "@" ]] ; then
+				apiendpoint="https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${item:1}&tweet_mode=extended&count=${num}"
+			else
+
+			fi
+
 			if [[ "$omitreplies" -eq 1 ]] ; then
 				if [[ "$started" -eq 0 ]] ; then
 					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=1&tweet_mode=extended&exclude_replies=true"`
@@ -443,8 +450,8 @@ function listen {
 }
 
 function chirps {
-	__addarg "-h" "--help" "help" "optional" "" "Get chirps (recent tweets) from a bird (a Twitter user)"
-	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to get chirps from"
+	__addarg "-h" "--help" "help" "optional" "" "Get chirps (recent tweets) from a bird (a Twitter user) or hashtag"
+	__addarg "" "source" "positionalarray" "required" "" "The bird(s) or hashtag(s) to get chirps from"
 	__addarg "-n" "--num" "storevalue" "optional" "10" "The number of chirps to get"
 	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
 	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
@@ -454,19 +461,30 @@ function chirps {
 	__verifyjq
 	__verifycredentials
 
-	for handle in "${bird[@]}" ; do
-		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
+	for item in "${source[@]}" ; do
+		if [[ "$item" != @* && "$item" != '#'* ]] ; then
+			__errortext "$koiname: err: sources must start with either an '@' for Twitter handles or '#' for hashtags"
+			return 1
+		fi
 	done
 
-	if [[ "$num" -gt 200 ]] ; then __errortext "$koiname: err: cannot get more than 200 chirps" ; return 1 ;fi
-	
-	for handle in "${bird[@]}" ; do
-		if [[ "$omitreplies" -eq 1 ]] ; then
-			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&tweet_mode=extended&exclude_replies=true"`
+	if [[ "$num" -gt 200 ]] ; then __errortext "$koiname: err: cannot get more than 200 chirps per source" ; return 1 ;fi
+
+	local apiendpoint=
+	local response=
+	for item in "${source[@]}" ; do
+		if [[ "${item:0:1}" == "@" ]] ; then
+			apiendpoint="https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${item:1}&tweet_mode=extended&count=${num}"
+			if [[ "$omitreplies" -eq 1 ]] ; then
+				apiendpoint="${apiendpoint}&exclude_replies=true"
+			fi
+			response=`__twurl "$apiendpoint"`
+			__processtweets "$response" "$absolute" "$link"
 		else
-			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&tweet_mode=extended"`
+			apiendpoint="https://api.twitter.com/1.1/search/tweets.json?q=%23${item:1}&tweet_mode=extended&count=${num}"
+			response=`__twurl "$apiendpoint"`
+			__processtweets "`echo "$response" | jq -r '.statuses'`" "$absolute" "$link"
 		fi
-		__processtweets "$response" "$absolute" "$link"
 	done
 }
 
