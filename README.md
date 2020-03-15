@@ -22,9 +22,10 @@ You can view the complete documentation with `birdhouse help --verbose`. You can
 
 ### Stream tweets
 ```bash
-birdhouse listen -a @CNN @CNNPolitics @cnni @cnnbrk
+birdhouse listen -a @CNN @CNNPolitics @cnni @cnnbrk '#coronavirus'
 ```
 ```
+Streaming tweets by @CNN + @CNNPolitics + @cnni + @cnnbrk, for #coronavirus
 ➤ @CNN | Mar 14, 2020 @ 13:44:05
   Republican National Committee Chairwoman Ronna McDaniel was tested for 
   coronavirus Friday night after experiencing a fever and flu-like symptoms, a 
@@ -50,6 +51,11 @@ birdhouse listen -a @CNN @CNNPolitics @cnni @cnnbrk
   to flood global markets with cheap oil. It's a risky strategy that could result 
   in lean years for a country that still relies on crude sales to drive much of 
   its domestic economy. https://cnn.it/2WdEZGJ
+
+➤ @rottersclubx | Mar 15, 2020 @ 16:16:36 
+  The latest The Federico Ferri Daily! 
+  https://paper.li/rottersclubx/1309216321?edition_id=03c122d0-6713-11ea-a645-0cc4
+  7a0d1609  Thanks to @albertomelloni @breveinutile #coronavirus #covid19
 ```
 
 ### Get recent tweets from specific users
@@ -73,6 +79,33 @@ birdhouse chirps @elonmusk -n 3
   you make this happen?
     @elonmusk | 4 hours ago
     @BHMoors Coming soon
+```
+
+### Get recent tweets for specific hashtags
+```bash
+birdhouse chirps -n 3 --lang en '#covid19'
+```
+```
+➤ @Tooseyboy3 | 1 second ago 
+  RT @sahouraxo Holy moly.
+  
+  Massive anti-government protests in #Paris, #France today, defying #coronavirus 
+  lockdown.
+  
+  But barely a peep from the corporate media. #YellowVests #GiletsJaunes 
+  https://twitter.com/actufrparis/status/1238825419631181826/video/1 
+
+➤ @PClots | 2 seconds ago 
+  RT @UrijiJami Meditate from your homes @Jugodeparchita 
+  https://www.urijijami.com/stories/5e6e3dde37193230e8463b5c 
+  #pandemia #COVIDー19 #coronavirus #15Mar #meditation #MeQuedoEnCasa #StayHome
+
+➤ @rrrrrrrrraydon | 2 seconds ago 
+  RT @AdoptionsUk Please share Rory and his mum to help them find a home 
+  toegther, currently with rspca DERBYSHIRE 
+  
+  #HORSES #ponies #uk #coronavirus #MondayMotivaton 
+  https://twitter.com/AdoptionsUk/status/1237327150962937859
 ```
 
 ### View information about Twitter accounts

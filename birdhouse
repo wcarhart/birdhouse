@@ -264,12 +264,12 @@ function __processtweets {
 	local absolute="$2"
 	local link="$3"
 
-	for row in $(echo "$response" | jq -r '.[] | @base64') ; do
+	for row in $(jq -r '.[] | @base64' <<< "$response") ; do
 		function __jq {
-			echo ${row} | base64 --decode | jq -r ${1}
+			base64 --decode <<< "$row" | jq -r ${1}
 		}
-		if [[ `jq 'has("retweeted_status")' <<< "$(echo $row | base64 --decode)"` == "true" ]] ; then
-			local text="RT `__jq '.retweeted_status.full_text'`"
+		if [[ `jq 'has("retweeted_status")' <<< "$(base64 --decode <<< "$row")"` == "true" ]] ; then
+			local text="RT @`__jq '.retweeted_status.user.screen_name'` `__jq '.retweeted_status.full_text'`"
 		else
 			local text="`__jq '.full_text'`"
 		fi
@@ -287,6 +287,9 @@ function __processtweets {
 			local __author="`__jq '.in_reply_to_screen_name'`"
 			local __text="`jq -r '.full_text' <<< "$__response"`"
 			local __dt="`jq -r '.created_at' <<< "$__response"`"
+			if [[ "$absolute" -eq 1 ]] ; then
+				__dt="ABSOLUTE$__dt"
+			fi
 			if [[ $link -eq 1 ]] ; then
 				local __linktext="https://twitter.com/${__author}/status/${replytweet}"
 			fi
@@ -299,9 +302,71 @@ function __processtweets {
 	done
 }
 
-# ==================== CLI FUNCTIONS ====================
+function __resolvelanguage {
+	# resolve a language to an ISO-361-1 language code
+	# $1 is the string to resolve
+	local codes=( Afar:aa Abkhazian:ab Afrikaans:af Akan:ak Albanian:sq Amharic:am Arabic:ar \
+		Aragonese:an Armenian:hy Assamese:as Avaric:av Avestan:ae Aymara:ay Azerbaijani:az \
+		Bashkir:ba Bambara:bm Basque:eu Belarusian:be Bengali:bn Bihari:bh Bislama:bi \
+		Bosnian:bs Breton:br Bulgarian:bg Burmese:my Catalan:ca Valencian:ca Chamorro:ch \
+		Chechen:ce Chinese:zh ChurchSlavic:cu OldSlavonic:cu ChurchSlavonic:cu OldBulgarian:cu \
+		OldChurchSlavonic:cu Chuvash:cv Cornish:kw Corsican:co Cree:cr Czech:cs Danish:da \
+		Divehi:dv Dhivehi:dv Maldivian:dv Dutch:nl Flemish:nl Dzongkha:dz English:en \
+		Esperanto:eo Estonian:et Ewe:ee Faroese:fo Fijian:fj Finnish:fi French:fr \
+		WesternFrisian:fy Fulah:ff Georgian:ka German:de Gaelic:gd ScottishGaelic:gd \
+		Irish:ga Galician:gl Manx:gv Greek:el Guarani:gn Gujarati:gu Haitian:ht HaitianCreole:ht \
+		Hausa:ha Hebrew:he Herero:hz Hindi:hi HiriMotu:ho Croatian:hr Hungarian:hu Igbo:ig \
+		Icelandic:is Ido:io SichuanYi:ii Nuosu:ii Inuktitut:iu Interlingue:ie Occidental:ie \
+		Interlingua:ia Indonesian:id Inupiaq:ik Italian:it Javanese:jv Japanese:ja \
+		Kalaallisut:kl Greenlandic:kl Kannada:kn Kashmiri:ks Kanuri:kr Kazakh:kk CentralKhmer:km \
+		Kikuyu:ki Gikuyu:ki Kinyarwanda:rw Kirghiz:ky Kyrgyz:ky Komi:kv Kongo:kg Korean:ko \
+		Kuanyama:kj Kwanyama:kj Kurdish:ku Lao:lo Latin:la Latvian:lv Limburgan:li Limburger:li \
+		Limburgish:li Lingala:ln Lithuanian:lt Luxembourgish:lb Letzeburgesch:lb Luba-Katanga:lu \
+		Ganda:lg Macedonian:mk Marshallese:mh Malayalam:ml Maori:mi Marathi:mr Malay:ms \
+		Malagasy:mg Maltese:mt Mongolian:mn Nauru:na Navajo:nv Navaho:nv SouthNdebele:nr \
+		NorthNdebele:nd Ndonga:ng Nepali:ne NorwegianNynorsk:nn Nynorsk:nn Norwegian:nn \
+		Bokmål:nb Norwegian:nb NorwegianBokmål:nb Norwegian:no Chichewa:ny Chewa:ny Nyanja:ny \
+		Occitan:oc Provençal:oc Ojibwa:oj Oriya:or Oromo:om Ossetian:os Ossetic:os Panjabi:pa \
+		Punjabi:pa Persian:fa Pali:pi Polish:pl Portuguese:pt Pushto:ps Pashto:ps Quechua:qu \
+		Romansh:rm Romanian:ro Moldavian:ro Moldovan:ro Rundi:rn Russian:ru Sango:sg Sanskrit:sa \
+		Sinhala:si Sinhalese:si Slovak:sk Slovenian:sl NorthernSami:se Samoan:sm Shona:sn \
+		Sindhi:sd Somali:so Sotho:st Spanish:es Sardinian:sc Serbian:sr Swati:ss Sundanese:su \
+		Swahili:sw Swedish:sv Tahitian:ty Tamil:ta Tatar:tt Telugu:te Tajik:tg Tagalog:tl \
+		Thai:th Tibetan:bo Tigrinya:ti Tonga:to Tswana:tn Tsonga:ts Turkmen:tk Turkish:tr \
+		Twi:tw Uighur:ug Uyghur:ug Ukrainian:uk Urdu:ur Uzbek:uz Venda:ve Vietnamese:vi \
+		Volapük:vo Welsh:cy Walloon:wa Wolof:wo Xhosa:xh Yiddish:yi Yoruba:yo Zhuang:za \
+		Chuang:za Zulu:zu \
+	)
+	local abbr=
+	if [[ "${#1}" -eq 2 ]] ; then
+		for code in "${codes[@]}" ; do
+			if [[ "${code#*:}" == "$1" ]] ; then
+				abbr="${code#*:}"
+				break
+			fi
+		done
+		if [[ "$abbr" == "" ]] ; then
+			__errortext "$koiname: err: invalid ISO-361 language code"
+			return 1
+		fi
+	else
+		for code in "${codes[@]}" ; do
+			local key="`tr '[A-Z]' '[a-z]' <<< "$code"`"
+			local query="`tr '[A-Z]' '[a-z]' <<< "$1"`"
+			if [[ "${key%:*}" == "$query" ]] ; then
+				abbr="${key#*:}"
+				break
+			fi
+		done
+		if [[ "$abbr" == "" ]] ; then
+			__errortext "$koiname: err: could not resolve language '$1'"
+			return 1
+		fi
+	fi
+	echo "$abbr"
+}
 
-# TODO: implement streaming from hashtags
+# ==================== CLI FUNCTIONS ====================
 
 function init {
 	__addarg "-h" "--help" "help" "optional" "" "Set up birdhouse"
@@ -348,12 +413,14 @@ function regenerate {
 
 	__verifyjq
 
+	# verify 'birdhouse init' has been run
 	if [[ ! -d ~/.birdhouse ]] ; then
 		__errortext "$koiname: err: birdhouse has not been initialized"
 		__errortext "  use 'birdhouse init' to initialize"
 		return 1
 	fi
 
+	# verify API keys are present
 	if [[ ! -f ~/.birdhouse/auth || ! -f ~/.birdhouse/secret ]] ; then
 		__errortext "$koiname: err: missing credential files in ~/.birdhouse"
 		__errortext "  use 'birdhouse init --force' to reinitialize"
@@ -364,125 +431,230 @@ function regenerate {
 }
 
 function listen {
-	__addarg "-h" "--help" "help" "optional" "" "Listen to a bird (a Twitter user)"
-	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to listen to"
+	__addarg "-h" "--help" "help" "optional" "" "Listen to a bird (a Twitter user) or hashtag"
+	__addarg "" "source" "positionalarray" "required" "" "The bird(s) or hashtag(s) to listen to"
 	__addarg "-r" "--refresh" "storevalue" "optional" "10" "The refresh rate, in seconds"
 	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
-	__addarg "-s" "--startfromnow" "flag" "optional" "" "Start streaming from now"
 	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
-	__addarg "-l" "--link" "flag" "optional" "" "Include a link to the tweet"
+	__addarg "-u" "--url" "flag" "optional" "" "Include a URL link to the tweet"
+	__addarg "-p" "--popular" "flag" "optional" "" "Query in bigger chunks (increases packet size)"
+	__addarg "-l" "--language" "storevalue" "optional" "" "Only show tweets in a specific language"
+	__addarg "-q" "--quiet" "flag" "optional" "" "Silence warnings"
 	__parseargs "$@"
 
 	__verifyjq
 	__verifycredentials
 
-	local chirps=( )
-
-	for handle in "${bird[@]}" ; do
-		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
+	# verify each source is formatted correctly
+	for item in "${source[@]}" ; do
+		if [[ "$item" != @* && "$item" != '#'* ]] ; then
+			__errortext "$koiname: err: sources must start with either an '@' for Twitter handles or '#' for hashtags"
+			return 1
+		fi
 	done
 
-	if [[ "$refresh" -lt 10 ]] ; then __errortext "$koiname: err: minimum refresh rate is 10 seconds" ; return 1 ; fi
+	if [[ "$refresh" -lt 1 ]] ; then __errortext "$koiname: err: minimum refresh rate is 1 second" ; return 1 ; fi
 
+	# resolve language
+	local langtext=
+	if [[ "$language" != "" ]] ; then
+		if [[ "${source[@]}" == *@* ]] ; then
+			if [[ "$quiet" -eq 0 ]] ; then
+				__errortext "warning: --language flag is irrelevant for Twitter handles"
+			fi
+		fi
+		resolvedlanguage=`__resolvelanguage "$language"`
+		if [[ "$resolvedlanguage" == "" ]] ; then return 1 ; fi
+		langtext="&lang=${resolvedlanguage}"
+	fi
+
+	# set trap to exit cleanly
 	trap __listenexit EXIT
 
-	local started=0
+	# set loading text
+	local populartext=
+	if [[ "$popular" -eq 1 ]] ; then
+		populartext="popular "
+	fi
+	local handletext=
+	local hashtagtext=
+	for item in "${source[@]}" ; do
+		if [[ "${item:0:1}" == "@" ]] ; then
+			if [[ "$handletext" == "" ]] ; then
+				handletext="by ${item}"
+			else
+				handletext="${handletext} + ${item}"
+			fi
+		else
+			if [[ "$hashtagtext" == "" ]] ; then
+				hashtagtext="for ${item}"
+			else
+				hashtagtext="${hashtagtext} + ${item}"
+			fi
+		fi
+	done
+	if [[ "$handletext" != "" && "$hashtagtext" != "" ]] ; then
+		hashtagtext=", ${hashtagtext}"
+	fi
+	echo "Streaming ${populartext}tweets ${handletext}${hashtagtext}"
+
+	# start stream
 	local seentweets=
+	local started=0
 	while : ; do
-		local streamoutput=
 		local tweetbuffer=( )
 		local timestamps=( )
-		for handle in "${bird[@]}" ; do
-			if [[ "$omitreplies" -eq 1 ]] ; then
-				if [[ "$started" -eq 0 ]] ; then
-					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=1&tweet_mode=extended&exclude_replies=true"`
+		local apiendpoint=
+		for item in "${source[@]}" ; do
+			# configure API endpoint
+			if [[ "${item:0:1}" == "@" ]] ; then
+				apiendpoint="https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${item:1}&tweet_mode=extended"
+				if [[ "$omitreplies" -eq 1 ]] ; then
+					apiendpoint="${apiendpoint}&exclude_replies=true"
+				fi
+				if [[ "$popular" -eq 1 ]] ; then
+					apiendpoint="${apiendpoint}&count=200&result_type=popular"
 				else
-					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&tweet_mode=extended&exclude_replies=true"`
+					apiendpoint="${apiendpoint}&count=10"
 				fi
 			else
-				if [[ "$started" -eq 1 ]] ; then
-					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=1&tweet_mode=extended"`
+				apiendpoint="https://api.twitter.com/1.1/search/tweets.json?q=%23${item:1}&tweet_mode=extended&count=10"
+				if [[ "$popular" -eq 1 ]] ; then
+					apiendpoint="${apiendpoint}&count=100&result_type=popular"
 				else
-					local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=3&tweet_mode=extended&exclude_replies=true"`
+					apiendpoint="${apiendpoint}&count=10"
 				fi
 			fi
-			for row in $(echo "$response" | jq -r '.[] | @base64') ; do
+
+			apiendpoint="${apiendpoint}${langtext}"
+
+			# get API response
+			response=`__twurl "$apiendpoint"`
+			if [[ "${item:0:1}" == '#' ]] ; then
+				response="`jq -r '.statuses' <<< "$response"`"
+			fi
+
+			for row in $(jq -r '.[] | @base64' <<< "$response") ; do
 				function __jq {
-					echo ${row} | base64 --decode | jq -r ${1}
+					base64 --decode <<< "$row" | jq -r ${1}
 				}
+
+				# get timestamp and ID
 				local ts=$(__iso2epoch "`__jq '.created_at'`")
 				local id=`__jq '.id'`
-				if [[ "$started" -eq 0 && "$startfromnow" -eq 1 ]] ; then
-					seentweets="$seentweets $id"
-				fi
-				if [[ "$seentweets" == *$id* ]] ; then
+
+				# develop baseline
+				if [[ "$started" -eq 0 ]] ; then
+					seentweets="${seentweets}$id "
 					continue
 				fi
-				seentweets="$seentweets $id"
+
+				# don't repeat found tweets
+				if [[ "$seentweets" == *$id* ]] ; then
+					continue
+				else
+					seentweets="${seentweets}$id "
+				fi
+
+				# sort array of Tweets from different sources
 				local placed=0
 				for i in "${!tweetbuffer[@]}" ; do
 					if [[ "${timestamps[$i]}" -gt "$ts" ]] ; then
 						placed=1
-						tweetbuffer=( "${tweetbuffer[@]:0:$i}" "[`echo ${row} | base64 --decode`]" "${tweetbuffer[@]:$i}" )
+						tweetbuffer=( "${tweetbuffer[@]:0:$i}" "[`base64 --decode <<< "$row"`]" "${tweetbuffer[@]:$i}" )
 						timestamps=( "${timestamps[@]:0:$i}" "$ts" "${timestamps[@]:$i}" )
 						break
 					fi
 				done
 				if [[ $placed -eq 0 ]] ; then
-					tweetbuffer=( "${tweetbuffer[@]}" "[`echo ${row} | base64 --decode`]" )
+					tweetbuffer=( "${tweetbuffer[@]}" "[`base64 --decode <<< "$row"`]" )
 					timestamps=( "${timestamps[@]}" "$ts" )
 				fi
 			done
 		done
 		started=1
+
+		# process tweets
 		for tweet in "${tweetbuffer[@]}" ; do
-			__processtweets "$tweet" "$absolute" "$link"
+			__processtweets "$tweet" "$absolute" "$url"
 		done
+
 		sleep "$refresh"
 	done
 }
 
 function chirps {
-	__addarg "-h" "--help" "help" "optional" "" "Get chirps (recent tweets) from a bird (a Twitter user)"
-	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to get chirps from"
+	__addarg "-h" "--help" "help" "optional" "" "Get chirps (recent tweets) from a bird (a Twitter user) or hashtag"
+	__addarg "" "source" "positionalarray" "required" "" "The bird(s) or hashtag(s) to get chirps from"
 	__addarg "-n" "--num" "storevalue" "optional" "10" "The number of chirps to get"
-	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
+	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies (may reduce number of chirps)"
 	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
-	__addarg "-l" "--link" "flag" "optional" "" "Include a link to the tweet"
+	__addarg "-u" "--url" "flag" "optional" "" "Include a URL link to the tweet"
+	__addarg "-l" "--language" "storevalue" "optional" "" "Only show tweets in a specific language"
+	__addarg "-q" "--quiet" "flag" "optional" "" "Silence warnings"
 	__parseargs "$@"
 
 	__verifyjq
 	__verifycredentials
 
-	for handle in "${bird[@]}" ; do
-		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
+	# verify each source is formatted correctly
+	for item in "${source[@]}" ; do
+		if [[ "$item" != @* && "$item" != '#'* ]] ; then
+			__errortext "$koiname: err: sources must start with either an '@' for Twitter handles or '#' for hashtags"
+			return 1
+		fi
 	done
 
-	if [[ "$num" -gt 200 ]] ; then __errortext "$koiname: err: cannot get more than 200 chirps" ; return 1 ;fi
-	
-	for handle in "${bird[@]}" ; do
-		if [[ "$omitreplies" -eq 1 ]] ; then
-			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&tweet_mode=extended&exclude_replies=true"`
-		else
-			local response=`__twurl "https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${handle:1}&count=${num}&tweet_mode=extended"`
+	if [[ "$num" -gt 200 ]] ; then __errortext "$koiname: err: cannot get more than 200 chirps per source" ; return 1 ;fi
+
+	# resolve language
+	local langtext=
+	if [[ "$language" != "" ]] ; then
+		if [[ "${source[@]}" == *@* ]] ; then
+			if [[ "$quiet" -eq 0 ]] ; then
+				__errortext "warning: --language flag is irrelevant for Twitter handles"
+			fi
 		fi
-		__processtweets "$response" "$absolute" "$link"
+		resolvedlanguage=`__resolvelanguage "$language"`
+		if [[ "$resolvedlanguage" == "" ]] ; then return 1 ; fi
+		langtext="&lang=${resolvedlanguage}"
+	fi
+
+	# get tweets
+	local apiendpoint=
+	local response=
+	for item in "${source[@]}" ; do
+		if [[ "${item:0:1}" == "@" ]] ; then
+			apiendpoint="https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${item:1}&tweet_mode=extended&count=${num}"
+			if [[ "$omitreplies" -eq 1 ]] ; then
+				apiendpoint="${apiendpoint}&exclude_replies=true"
+			fi
+			response=`__twurl "$apiendpoint"`
+			__processtweets "$response" "$absolute" "$link"
+		else
+			apiendpoint="https://api.twitter.com/1.1/search/tweets.json?q=%23${item:1}&tweet_mode=extended&count=${num}${langtext}"
+			response=`__twurl "$apiendpoint"`
+			__processtweets "`jq -r '.statuses' <<< "$response"`" "$absolute" "$url"
+		fi
 	done
 }
 
 function bird {
 	__addarg "-h" "--help" "help" "optional" "" "Get information for a bird (a Twitter user)"
 	__addarg "" "bird" "positionalarray" "required" "" "The bird(s) to get"
+	__addarg "-u" "--url" "flag" "optional" "" "Include a URL link to the bird"
 	__parseargs "$@"
 
 	__verifyjq
 	__verifycredentials
 
+	# verify handles are formatted correctly
 	for handle in "${bird[@]}" ; do
 		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
 	done
 
 	for handle in "${bird[@]}" ; do
+		# get handle information, parse JSON
 		local response=`__twurl "https://api.twitter.com/1.1/users/lookup.json?screen_name=${handle:1}"`
 		local name="`jq -r '.[0].name' <<< "$response"`"
 		local screenname="`jq -r '.[0].screen_name' <<< "$response"`"
@@ -495,15 +667,28 @@ function bird {
 		if [[ "$name" == "" || "$name" == "null" ]] && [[ "$screen_name" == "" || "$screen_name" == "null" ]]; then
 			return 1
 		fi
+
+		# name, screen_name
 		echo -ne "${__bold}${name}${__reset} (${__teal}@${screenname}${__reset})"
+
+		# location
 		if [[ "$location" != "" ]] ; then
-			echo -e " | ${__italics}${location}${__reset}"
+			echo -ne " | ${__italics}${location}${__reset}"
+		fi
+
+		# URL
+		if [[ "$url" -eq 1 ]] ; then
+			echo -e " | ${__lightgrey}https://twitter.com/${screenname}${__reset}"
 		else
 			echo
 		fi
+
+		# bio
 		if [[ "$bio" != "" ]] ; then
 			echo -e "${__italics}${__lightgrey}${bio}${__reset}"
 		fi
+
+		# followers
 		if [[ "$followers" != "" ]] ; then
 			local __followers=follower
 			if [[ "$followers" != "1" ]] ; then
@@ -511,6 +696,8 @@ function bird {
 			fi
 			echo -e "  ${__yellow}${followers}${__reset} ${__followers}"
 		fi
+
+		# friends
 		if [[ "$friends" != "" ]] ; then
 			local __friends=friend
 			if [[ "$friends" != "1" ]] ; then
@@ -518,6 +705,8 @@ function bird {
 			fi
 			echo -e "  ${__yellow}${friends}${__reset} ${__friends}"
 		fi
+
+		# total number of tweets
 		if [[ "$tweets" != "" ]] ; then
 			local __tweets=tweet
 			if [[ "$tweets" != "1" ]] ; then
@@ -525,6 +714,8 @@ function bird {
 			fi
 			echo -e "  ${__yellow}${tweets}${__reset} ${__tweets}"
 		fi
+
+		# creation date
 		if [[ "$createdat" != "" ]] ; then
 			echo -e "  created on ${__teal}${createdat[1]} ${createdat[2]}, ${createdat[5]}${__reset}"
 		fi
