@@ -441,11 +441,12 @@ function regenerate {
 function listen {
 	__addarg "-h" "--help" "help" "optional" "" "Listen to a bird (a Twitter user) or hashtag"
 	__addarg "" "source" "positionalarray" "required" "" "The bird(s) or hashtag(s) to listen to"
-	__addarg "-r" "--refresh" "storevalue" "optional" "1" "The refresh rate, in seconds"
+	__addarg "-r" "--refresh" "storevalue" "optional" "10" "The refresh rate, in seconds"
 	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
 	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
 	__addarg "-u" "--url" "flag" "optional" "" "Include a URL link to the tweet"
 	__addarg "-p" "--popular" "flag" "optional" "" "Only show popular tweets"
+	__addarg "-n" "--now" "flag" "optional" "" "Start stream from now, rather than showing previous tweets"
 	__addarg "-l" "--language" "storevalue" "optional" "" "Only show tweets in a specific language"
 	__addarg "-q" "--quiet" "flag" "optional" "" "Silence warnings"
 	__parseargs "$@"
@@ -504,10 +505,15 @@ function listen {
 	if [[ "$handletext" != "" && "$hashtagtext" != "" ]] ; then
 		hashtagtext=", ${hashtagtext}"
 	fi
-	echo "Streaming ${populartext}tweets ${handletext}${hashtagtext}"
+	local nowtext=
+	if [[ $now -eq 1 ]] ; then
+		nowtext=" from now"
+	fi
+	echo "Streaming ${populartext}tweets ${handletext}${hashtagtext}${nowtext}"
 
 	# start stream
 	local seentweets=
+	started=0
 	while : ; do
 		local tweetbuffer=( )
 		local timestamps=( )
@@ -557,6 +563,11 @@ function listen {
 					seentweets="${seentweets}$id "
 				fi
 
+				# don't waste time if stream starts from now
+				if [[ $now -eq 1 && $started -eq 0 ]] ; then
+					continue
+				fi
+
 				# sort array of Tweets from different sources
 				local placed=0
 				for i in "${!tweetbuffer[@]}" ; do
@@ -575,6 +586,11 @@ function listen {
 		done
 
 		# process tweets
+		if [[ $now -eq 1 && $started -eq 0 ]] ; then
+			started=1
+			continue
+		fi
+
 		for tweet in "${tweetbuffer[@]}" ; do
 			__processtweets "$tweet" "$absolute" "$url"
 		done
