@@ -437,7 +437,7 @@ function listen {
 	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
 	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
 	__addarg "-u" "--url" "flag" "optional" "" "Include a URL link to the tweet"
-	__addarg "-p" "--popular" "flag" "optional" "" "Query in bigger chunks (increases packet size)"
+	__addarg "-p" "--popular" "flag" "optional" "" "Only show popular tweets"
 	__addarg "-l" "--language" "storevalue" "optional" "" "Only show tweets in a specific language"
 	__addarg "-q" "--quiet" "flag" "optional" "" "Silence warnings"
 	__parseargs "$@"
@@ -517,7 +517,7 @@ function listen {
 					apiendpoint="${apiendpoint}&count=10"
 				fi
 			else
-				apiendpoint="https://api.twitter.com/1.1/search/tweets.json?q=%23${item:1}&tweet_mode=extended&count=10"
+				apiendpoint="https://api.twitter.com/1.1/search/tweets.json?q=%23${item:1}&tweet_mode=extended"
 				if [[ "$popular" -eq 1 ]] ; then
 					apiendpoint="${apiendpoint}&count=50&result_type=popular"
 				else
