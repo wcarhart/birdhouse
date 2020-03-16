@@ -433,7 +433,7 @@ function regenerate {
 function listen {
 	__addarg "-h" "--help" "help" "optional" "" "Listen to a bird (a Twitter user) or hashtag"
 	__addarg "" "source" "positionalarray" "required" "" "The bird(s) or hashtag(s) to listen to"
-	__addarg "-r" "--refresh" "storevalue" "optional" "10" "The refresh rate, in seconds"
+	__addarg "-r" "--refresh" "storevalue" "optional" "1" "The refresh rate, in seconds"
 	__addarg "-o" "--omitreplies" "flag" "optional" "" "Omit replies"
 	__addarg "-a" "--absolute" "flag" "optional" "" "Use absolute timestamps"
 	__addarg "-u" "--url" "flag" "optional" "" "Include a URL link to the tweet"
@@ -500,7 +500,6 @@ function listen {
 
 	# start stream
 	local seentweets=
-	local started=0
 	while : ; do
 		local tweetbuffer=( )
 		local timestamps=( )
@@ -513,14 +512,14 @@ function listen {
 					apiendpoint="${apiendpoint}&exclude_replies=true"
 				fi
 				if [[ "$popular" -eq 1 ]] ; then
-					apiendpoint="${apiendpoint}&count=200&result_type=popular"
+					apiendpoint="${apiendpoint}&count=50&result_type=popular"
 				else
 					apiendpoint="${apiendpoint}&count=10"
 				fi
 			else
 				apiendpoint="https://api.twitter.com/1.1/search/tweets.json?q=%23${item:1}&tweet_mode=extended&count=10"
 				if [[ "$popular" -eq 1 ]] ; then
-					apiendpoint="${apiendpoint}&count=100&result_type=popular"
+					apiendpoint="${apiendpoint}&count=50&result_type=popular"
 				else
 					apiendpoint="${apiendpoint}&count=10"
 				fi
@@ -542,12 +541,6 @@ function listen {
 				# get timestamp and ID
 				local ts=$(__iso2epoch "`__jq '.created_at'`")
 				local id=`__jq '.id'`
-
-				# develop baseline
-				if [[ "$started" -eq 0 ]] ; then
-					seentweets="${seentweets}$id "
-					continue
-				fi
 
 				# don't repeat found tweets
 				if [[ "$seentweets" == *$id* ]] ; then
@@ -572,7 +565,6 @@ function listen {
 				fi
 			done
 		done
-		started=1
 
 		# process tweets
 		for tweet in "${tweetbuffer[@]}" ; do
