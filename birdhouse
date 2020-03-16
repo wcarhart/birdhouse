@@ -29,7 +29,7 @@ function __verifycredentials {
 		__errortext "$koiname: warning: missing OAuth bearer token, attempting to rectify"
 		if [[ ! -f ~/.birdhouse/auth || ! -f ~/.birdhouse/secret ]] ; then
 			__errortext "$koiname: err: missing credentials"
-			__errortext "  use 'birdhouse init --force' to reinitialize"
+			__errortext "  use 'birdhouse init' to initialize"
 			return 1
 		fi
 		__generatebearertoken
@@ -409,9 +409,17 @@ function init {
 
 function regenerate {
 	__addarg "-h" "--help" "help" "optional" "" "Regenerate OAuth bearer token"
+	__addarg "" "token" "positionalvalue" "optional" "" "An OAuth bearer token to use, rather than regenerating a new one"
 	__parseargs "$@"
 
 	__verifyjq
+
+	# override current credentials if passed an OAuth bearer token to use
+	if [[ "$token" != "" ]] ; then
+		mkdir -p ~/.birdhouse
+		echo "$token" > ~/.birdhouse/token
+		return
+	fi
 
 	# verify 'birdhouse init' has been run
 	if [[ ! -d ~/.birdhouse ]] ; then
