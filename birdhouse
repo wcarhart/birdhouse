@@ -448,6 +448,7 @@ function listen {
 	__addarg "-p" "--popular" "flag" "optional" "" "Only show popular tweets"
 	__addarg "-n" "--now" "flag" "optional" "" "Start stream from now, rather than showing previous tweets"
 	__addarg "-l" "--language" "storevalue" "optional" "" "Only show tweets in a specific language"
+	__addarg "-f" "--filter" "storearray" "optional" "" "Only print tweets that contain a specific string"
 	__addarg "-q" "--quiet" "flag" "optional" "" "Silence warnings"
 	__parseargs "$@"
 
@@ -509,7 +510,15 @@ function listen {
 	if [[ $now -eq 1 ]] ; then
 		nowtext=" from now"
 	fi
-	echo "Streaming ${populartext}tweets ${handletext}${hashtagtext}${nowtext}"
+	local filtertext=
+	if [[ "$filter" != "" ]] ; then
+		filtertext=" containing"
+		for f in "${filter[@]}" ; do
+			filtertext="${filtertext} '${f}' or"
+		done
+		filtertext="${filtertext%???}"
+	fi
+	echo "Streaming ${populartext}tweets ${handletext}${hashtagtext}${nowtext}${filtertext}"
 
 	# start stream
 	local seentweets=
@@ -592,6 +601,19 @@ function listen {
 		fi
 
 		for tweet in "${tweetbuffer[@]}" ; do
+			# filter tweets
+			if [[ "$filter" != "" ]] ; then
+				local found=0
+				for f in "${filter[@]}" ; do
+					if grep "$f" <<< "`jq '.[0].full_text' <<< "$tweet"`" >/dev/null ; then
+						found=1
+						break
+					fi
+				done
+				if [[ $found -eq 0 ]] ; then
+					continue
+				fi
+			fi
 			__processtweets "$tweet" "$absolute" "$url"
 		done
 
