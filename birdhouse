@@ -510,7 +510,15 @@ function listen {
 	if [[ $now -eq 1 ]] ; then
 		nowtext=" from now"
 	fi
-	echo "Streaming ${populartext}tweets ${handletext}${hashtagtext}${nowtext}"
+	local filtertext=
+	if [[ "$filter" != "" ]] ; then
+		filtertext=" containing"
+		for f in "${filter[@]}" ; do
+			filtertext="${filtertext} '${f}' or"
+		done
+		filtertext="${filtertext%???}"
+	fi
+	echo "Streaming ${populartext}tweets ${handletext}${hashtagtext}${nowtext}${filtertext}"
 
 	# start stream
 	local seentweets=
