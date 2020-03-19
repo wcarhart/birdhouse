@@ -519,12 +519,6 @@ function __listen {
 			fi
 		done
 	done
-
-	# process tweets
-	if [[ $now -eq 1 && $started -eq 0 ]] ; then
-		started=1
-		continue
-	fi
 }
 
 # ==================== CLI FUNCTIONS ====================
@@ -685,10 +679,17 @@ function listen {
 	# start stream
 	started=0
 	while : ; do
+		# listen for tweets
 		tweetbuffer=( )
 		__startspin
 		__listen
 		__stopspin
+
+		# process tweets
+		if [[ $now -eq 1 && $started -eq 0 ]] ; then
+			started=1
+			continue
+		fi
 		for tweet in "${tweetbuffer[@]}" ; do
 			# filter tweets
 			if [[ "$filter" != "" ]] ; then
