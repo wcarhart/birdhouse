@@ -83,7 +83,7 @@ birdhouse chirps @elonmusk -n 3
 
 ### Get recent tweets for specific hashtags
 ```bash
-birdhouse chirps -n 3 --lang en '#covid19'
+birdhouse chirps -n 3 --language en '#covid19'
 ```
 ```
 ➤ @Tooseyboy3 | 1 second ago 
