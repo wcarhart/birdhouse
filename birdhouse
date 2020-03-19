@@ -47,6 +47,19 @@ loading_messages=( \
 	"spinning fidget spinners" \
 	"contemplating the meaning of life" \
 	"drinking the Kool-Aid" \
+	"curing cancer" \
+	"uploading tweets to Google Drive" \
+	"probing middle-management" \
+	"declining meeting requests" \
+	"dockerizing docker" \
+	"unsubscribing from mailing lists" \
+	"increasing sprint velocity" \
+	"receiving tweets via snail mail" \
+	"⌘+C, ⌘+V'ing the next iPhone" \
+	"intermixing tabs and spaces" \
+	"searching for 10x developers" \
+	"opening more Chrome tabs" \
+	"closing cookie notification windows" \
 )
 
 # ==================== INTERNAL FUNCTIONS ====================
@@ -407,8 +420,10 @@ function __startspin {
 	# start the spinner
 	set +m
 	local message=${loading_messages[$RANDOM % ${#loading_messages[@]} ]}
-	echo -n "$message...  "
-	{ while : ; do for X in '-' '\' '|' '/' ; do echo -en "\b$X" ; sleep 0.1 ; done ; done & } 2>/dev/null
+	echo -n "$message...         "
+	# { while : ; do for X in '-' '\' '|' '/' ; do echo -en "\b$X" ; sleep 0.1 ; done ; done & } 2>/dev/null
+	# { while : ; do for X in '┤' '┘' '┴' '└' '├' '┌' '┬' '┐' ; do echo -en "\b$X" ; sleep 0.1 ; done ; done & } 2>/dev/null
+	{ while : ; do for X in '( •    )' '(  •   )' '(   •  )' '(    • )' '(     •)' '(    • )' '(   •  )' '(  •   )' '( •    )' '(•     )' ; do echo -en "\b\b\b\b\b\b\b\b$X" ; sleep 0.1 ; done ; done & } 2>/dev/null
 	spinpid=$!
 }
 
