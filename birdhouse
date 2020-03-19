@@ -60,6 +60,21 @@ loading_messages=( \
 	"searching for 10x developers" \
 	"opening more Chrome tabs" \
 	"closing cookie notification windows" \
+	"flipping bits" \
+	"calling Twitter for verification" \
+	"adding comments to JSON" \
+	"rm -rf node_modules" \
+	"perusing Stack Overflow" \
+	"increasing sprint scope" \
+	"refusing to pay \$0.99 for an app" \
+	"turning it off and on again" \
+	"registering yet another domain name" \
+	"building a GUI" \
+	"verifying the blockchain" \
+	"checking the git blame" \
+	"scrubbing bugs" \
+	"installing another JavaScript framework" \
+	"attempting to exit vim" \
 )
 
 # ==================== INTERNAL FUNCTIONS ====================
@@ -423,7 +438,7 @@ function __startspin {
 	echo -n "$message...         "
 	# { while : ; do for X in '-' '\' '|' '/' ; do echo -en "\b$X" ; sleep 0.1 ; done ; done & } 2>/dev/null
 	# { while : ; do for X in '┤' '┘' '┴' '└' '├' '┌' '┬' '┐' ; do echo -en "\b$X" ; sleep 0.1 ; done ; done & } 2>/dev/null
-	{ while : ; do for X in '( •    )' '(  •   )' '(   •  )' '(    • )' '(     •)' '(    • )' '(   •  )' '(  •   )' '( •    )' '(•     )' ; do echo -en "\b\b\b\b\b\b\b\b$X" ; sleep 0.1 ; done ; done & } 2>/dev/null
+	{ while : ; do for X in '  •     ' '   •    ' '    •   ' '     •  ' '      • ' '     •  ' '    •   ' '   •    ' '  •     ' ' •      ' ; do echo -en "\b\b\b\b\b\b\b\b$X" ; sleep 0.1 ; done ; done & } 2>/dev/null
 	spinpid=$!
 }
 
@@ -432,7 +447,6 @@ function __stopspin {
 	{ kill -9 $spinpid && wait; } 2>/dev/null
 	set -m
 	echo -en "\033[2K\r"
-	# echo -en "\b"
 }
 
 function __listen {
