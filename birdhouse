@@ -13,6 +13,42 @@ __lightgrey="\033[90m"
 __yellow="\033[93m"
 __teal="\033[96m"
 
+# keep track of the spinner's PID
+spinpid=
+
+# fun loading messages
+loading_messages=( \
+	"birds are chirping" \
+	"thumbs are typing" \
+	"opinions are flowing" \
+	"looking for fake news" \
+	"processing Twitter wars" \
+	"cats are walking across keyboards" \
+	"reading politicians' minds" \
+	"obfuscating message queues" \
+	"waiting for carrier pigeons to arrive" \
+	"querying all the databases" \
+	"hacking celebrity accounts" \
+	"running update service" \
+	"slacking off" \
+	"checking the news" \
+	"searching for anything noteworthy" \
+	"constructing additional pylons" \
+	"tipping the server" \
+	"fulfilling the prophecy" \
+	"begging Twitter for a response" \
+	"broadcasting S.O.S" \
+	"flying to the Silicon Valley to acquire more tweets" \
+	"helping an old lady cross the street" \
+	"the cake is a lie" \
+	"plagiarizing academic sources" \
+	"compiling source code" \
+	"checking the stock market" \
+	"spinning fidget spinners" \
+	"contemplating the meaning of life" \
+	"drinking the Kool-Aid" \
+)
+
 # ==================== INTERNAL FUNCTIONS ====================
 
 function __verifyjq {
@@ -251,7 +287,8 @@ function __printtweet {
 }
 
 function __listenexit {
-	echo " exiting..."
+	__stopspin
+	echo "exiting..."
 }
 
 function __processtweets {
@@ -364,6 +401,23 @@ function __resolvelanguage {
 		fi
 	fi
 	echo "$abbr"
+}
+
+function __startspin {
+	# start the spinner
+	set +m
+	local message=${loading_messages[$RANDOM % ${#loading_messages[@]} ]}
+	echo -n "$message...  "
+	{ while : ; do for X in '-' '\' '|' '/' ; do echo -en "\b$X" ; sleep 0.1 ; done ; done & } 2>/dev/null
+	spinpid=$!
+}
+
+function __stopspin {
+	# stop the spinner
+	{ kill -9 $spinpid && wait; } 2>/dev/null
+	set -m
+	echo -en "\033[2K\r"
+	# echo -en "\b"
 }
 
 # ==================== CLI FUNCTIONS ====================
@@ -519,87 +573,15 @@ function listen {
 		filtertext="${filtertext%???}"
 	fi
 	echo "Streaming ${populartext}tweets ${handletext}${hashtagtext}${nowtext}${filtertext}"
+	echo
 
 	# start stream
-	local seentweets=
 	started=0
 	while : ; do
-		local tweetbuffer=( )
-		local timestamps=( )
-		local apiendpoint=
-		for item in "${source[@]}" ; do
-			# configure API endpoint
-			if [[ "${item:0:1}" == "@" ]] ; then
-				apiendpoint="https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${item:1}&tweet_mode=extended"
-				if [[ "$omitreplies" -eq 1 ]] ; then
-					apiendpoint="${apiendpoint}&exclude_replies=true"
-				fi
-				if [[ "$popular" -eq 1 ]] ; then
-					apiendpoint="${apiendpoint}&count=50&result_type=popular"
-				else
-					apiendpoint="${apiendpoint}&count=10"
-				fi
-			else
-				apiendpoint="https://api.twitter.com/1.1/search/tweets.json?q=%23${item:1}&tweet_mode=extended"
-				if [[ "$popular" -eq 1 ]] ; then
-					apiendpoint="${apiendpoint}&count=50&result_type=popular"
-				else
-					apiendpoint="${apiendpoint}&count=10"
-				fi
-			fi
-
-			apiendpoint="${apiendpoint}${langtext}"
-
-			# get API response
-			response=`__twurl "$apiendpoint"`
-			if [[ "${item:0:1}" == '#' ]] ; then
-				response="`jq -r '.statuses' <<< "$response"`"
-			fi
-
-			for row in $(jq -r '.[] | @base64' <<< "$response") ; do
-				function __jq {
-					base64 --decode <<< "$row" | jq -r ${1}
-				}
-
-				# get timestamp and ID
-				local ts=$(__iso2epoch "`__jq '.created_at'`")
-				local id=`__jq '.id'`
-
-				# don't repeat found tweets
-				if [[ "$seentweets" == *$id* ]] ; then
-					continue
-				else
-					seentweets="${seentweets}$id "
-				fi
-
-				# don't waste time if stream starts from now
-				if [[ $now -eq 1 && $started -eq 0 ]] ; then
-					continue
-				fi
-
-				# sort array of Tweets from different sources
-				local placed=0
-				for i in "${!tweetbuffer[@]}" ; do
-					if [[ "${timestamps[$i]}" -gt "$ts" ]] ; then
-						placed=1
-						tweetbuffer=( "${tweetbuffer[@]:0:$i}" "[`base64 --decode <<< "$row"`]" "${tweetbuffer[@]:$i}" )
-						timestamps=( "${timestamps[@]:0:$i}" "$ts" "${timestamps[@]:$i}" )
-						break
-					fi
-				done
-				if [[ $placed -eq 0 ]] ; then
-					tweetbuffer=( "${tweetbuffer[@]}" "[`base64 --decode <<< "$row"`]" )
-					timestamps=( "${timestamps[@]}" "$ts" )
-				fi
-			done
-		done
-
-		# process tweets
-		if [[ $now -eq 1 && $started -eq 0 ]] ; then
-			started=1
-			continue
-		fi
-
+		tweetbuffer=( )
+		__startspin
+		__listen
+		__stopspin
 		for tweet in "${tweetbuffer[@]}" ; do
 			# filter tweets
 			if [[ "$filter" != "" ]] ; then
@@ -616,9 +598,88 @@ function listen {
 			fi
 			__processtweets "$tweet" "$absolute" "$url"
 		done
-
+		__startspin
 		sleep "$refresh"
+		__stopspin
 	done
+}
+
+function __listen {
+	local timestamps=( )
+	local apiendpoint=
+	for item in "${source[@]}" ; do
+		# configure API endpoint
+		if [[ "${item:0:1}" == "@" ]] ; then
+			apiendpoint="https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=${item:1}&tweet_mode=extended"
+			if [[ "$omitreplies" -eq 1 ]] ; then
+				apiendpoint="${apiendpoint}&exclude_replies=true"
+			fi
+			if [[ "$popular" -eq 1 ]] ; then
+				apiendpoint="${apiendpoint}&count=50&result_type=popular"
+			else
+				apiendpoint="${apiendpoint}&count=10"
+			fi
+		else
+			apiendpoint="https://api.twitter.com/1.1/search/tweets.json?q=%23${item:1}&tweet_mode=extended"
+			if [[ "$popular" -eq 1 ]] ; then
+				apiendpoint="${apiendpoint}&count=50&result_type=popular"
+			else
+				apiendpoint="${apiendpoint}&count=10"
+			fi
+		fi
+
+		apiendpoint="${apiendpoint}${langtext}"
+
+		# get API response
+		response=`__twurl "$apiendpoint"`
+		if [[ "${item:0:1}" == '#' ]] ; then
+			response="`jq -r '.statuses' <<< "$response"`"
+		fi
+
+		for row in $(jq -r '.[] | @base64' <<< "$response") ; do
+			function __jq {
+				base64 --decode <<< "$row" | jq -r ${1}
+			}
+
+			# get timestamp and ID
+			local ts=$(__iso2epoch "`__jq '.created_at'`")
+			local id=`__jq '.id'`
+
+			# don't repeat found tweets
+			if [[ "$seentweets" == *$id* ]] ; then
+				continue
+			else
+				seentweets="${seentweets}$id "
+			fi
+
+			# don't waste time if stream starts from now
+			if [[ $now -eq 1 && $started -eq 0 ]] ; then
+				continue
+			fi
+
+			# sort array of Tweets from different sources
+			local placed=0
+			for i in "${!tweetbuffer[@]}" ; do
+				if [[ "${timestamps[$i]}" -gt "$ts" ]] ; then
+					placed=1
+					tweetbuffer=( "${tweetbuffer[@]:0:$i}" "[`base64 --decode <<< "$row"`]" "${tweetbuffer[@]:$i}" )
+					timestamps=( "${timestamps[@]:0:$i}" "$ts" "${timestamps[@]:$i}" )
+					break
+				fi
+			done
+			if [[ $placed -eq 0 ]] ; then
+				tweetbuffer=( "${tweetbuffer[@]}" "[`base64 --decode <<< "$row"`]" )
+				timestamps=( "${timestamps[@]}" "$ts" )
+			fi
+		done
+	done
+	# echo "buffer in __listen: ${tweetbuffer[@]}"
+
+	# process tweets
+	if [[ $now -eq 1 && $started -eq 0 ]] ; then
+		started=1
+		continue
+	fi
 }
 
 function chirps {
