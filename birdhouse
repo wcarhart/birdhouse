@@ -1,8 +1,12 @@
 #!/bin/bash
+# shellcheck disable=SC2016
+
 set -e
 
+# shellcheck disable=SC1091
 source koi
 koiname=birdhouse
+# shellcheck disable=SC2034
 koidescription="Passive tweet watcher from the command line"
 
 # colors
@@ -81,6 +85,7 @@ loading_messages=( \
 
 function __verifyjq {
 	# verify jq is installed
+	# shellcheck disable=SC2091
 	if ! $(type jq > /dev/null 2>&1); then
 		__errortext "$koiname: err: 'jq' is not in the PATH (see: https://stedolan.github.io/jq/)"
 		return 1
@@ -102,11 +107,13 @@ function __verifycredentials {
 
 function __generatebearertoken {
 	# generate a OAuth2 bearer token from a Twitter API key and API secret key
-	local __apikey="`cat ~/.birdhouse/auth`"
-	local __secretkey="`cat ~/.birdhouse/secret`"
+	local __apikey
+	__apikey="$(cat ~/.birdhouse/auth)"
+	local __secretkey
+	__secretkey="$(cat ~/.birdhouse/secret)"
 
 	curl -s -u "${__apikey}:${__secretkey}" --data 'grant_type=client_credentials' 'https://api.twitter.com/oauth2/token' > ~/.birdhouse/temp
-	accesstoken=`jq -r '.access_token' ~/.birdhouse/temp`
+	accesstoken=$(jq -r '.access_token' ~/.birdhouse/temp)
 
 	if [[ "$accesstoken" == "null" ]] ; then
 		__errortext "$koiname: err: unable to verify your credentials, could not generate bearer token"
@@ -129,14 +136,16 @@ function __twurl {
 		local nocheck=1
 		shift
 	fi
-	local token="`cat ~/.birdhouse/token`"
-	local response=`curl -s -H "Authorization: Bearer ${token}" "$1"`
+	local token
+	token="$(cat ~/.birdhouse/token)"
+	local response
+	response=$(curl -s -H "Authorization: Bearer ${token}" "$1")
 
 	if [[ "$nocheck" -eq 0 ]] ; then
-		if [[ `jq -r 'if type=="object" then "object" else "" end' <<< "$response"` == "object" ]] ; then
-			if [[ `jq 'has("errors")' <<< "$response"` == "true" ]] ; then
-				__errortext "$koiname: err: Twitter API error `jq '.errors[0].code' <<< "$response"`"
-				__errortext "  `jq -r '.errors[0].message' <<< "$response"`"
+		if [[ $(jq -r 'if type=="object" then "object" else "" end' <<< "$response") == "object" ]] ; then
+			if [[ $(jq 'has("errors")' <<< "$response") == "true" ]] ; then
+				__errortext "$koiname: err: Twitter API error $(jq '.errors[0].code' <<< "$response")"
+				__errortext "  $(jq -r '.errors[0].message' <<< "$response")"
 				return 1
 			fi
 		fi
@@ -147,7 +156,8 @@ function __twurl {
 function __gettweet {
 	# get a specific tweet
 	# $1 is the tweet's ID
-	local response=`__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${1}&tweet_mode=extended"`
+	local response
+	response=$(__twurl "https://api.twitter.com/1.1/statuses/show.json?id=${1}&tweet_mode=extended")
 	echo "$response"
 }
 
@@ -155,7 +165,8 @@ function __iso2epoch {
 	# convert a ISO-8601 datetime stamp (from Twitter) to epoch time
 	# $1 is an ISO-8601 datetime stamp in the format:
 	#   %a %b %d %X %z %Y
-	local epochtime=`date -j -u -f '%a %b %d %X %z %Y' "$1" '+%s' || date -u -d "$1" +'%s'`
+	local epochtime
+	epochtime=$(date -j -u -f '%a %b %d %X %z %Y' "$1" '+%s' || date -u -d "$1" +'%s')
 	echo "$epochtime"
 }
 
@@ -163,35 +174,37 @@ function __resolvetime {
 	# resolve epoch time to a prettified English statement
 	# $1 is an ISO-8601 datetime stamp in the format:
 	#   %a %b %d %X %z %Y
-	currenttime=`date +'%s'`
-	postedtime=`__iso2epoch "$1"`
+	local currenttime
+	currenttime=$(date +'%s')
+	local postedtime
+	postedtime=$(__iso2epoch "$1")
 
-	timediff=$(( $currenttime - $postedtime ))
+	timediff=$(( currenttime - postedtime ))
 	if [[ $timediff -lt 60 ]] ; then
-		echo `__pluralize $timediff second`
+		__pluralize $timediff second
 	elif [[ $timediff -lt 3600 ]] ; then
-		timediff=$(( $timediff / 60 ))
-		echo `__pluralize $timediff minute`
+		timediff=$(( timediff / 60 ))
+		__pluralize $timediff minute
 	elif [[ $timediff -lt 86400 ]] ; then
-		timediff=$(( $timediff / 3600 ))
-		echo `__pluralize $timediff hour`
+		timediff=$(( timediff / 3600 ))
+		__pluralize $timediff hour
 	elif [[ $timediff -lt 604800 ]] ; then
-		timediff=$(( $timediff / 86400 ))
-		echo `__pluralize $timediff day`
+		timediff=$(( timediff / 86400 ))
+		__pluralize $timediff day
 	elif [[ $timediff -lt 2592000 ]] ; then
-		timediff=$(( $timediff / 604800 ))
-		echo `__pluralize $timediff week`
+		timediff=$(( timediff / 604800 ))
+		__pluralize $timediff week
 	elif [[ $timediff -lt 31556952 ]] ; then
-		timediff=$(( $timediff / 2592000 ))
-		echo `__pluralize $timediff month`
+		timediff=$(( timediff / 2592000 ))
+		__pluralize $timediff month
 	elif [[ $timediff -lt 315569520 ]] ; then
-		timediff=$(( $timediff / 31556952 ))
-		echo `__pluralize $timediff year`
+		timediff=$(( timediff / 31556952 ))
+		__pluralize $timediff year
 	elif [[ $timediff -lt 3155695200 ]] ; then
-		timediff=$(( $timediff / 315569520 ))
-		echo `__pluralize $timediff decade`
+		timediff=$(( timediff / 315569520 ))
+		__pluralize $timediff decade
 	else
-		echo `__pluralize $timdiff century`
+		__pluralize $timediff century
 	fi
 }
 
@@ -210,7 +223,8 @@ function __cleantext {
 	# clean text into terminal friendly format
 	# $@ is the text to clean
 
-	local __content=$(echo "$@" | sed \
+	local __content
+	__content=$(echo "$@" | sed \
 	-e 's/&gt;/>/g' \
 	-e 's/&lt;/</g' \
 	-e "s/&#x27;/'/g" \
@@ -227,7 +241,7 @@ function __cleantext {
 	-e 's~href=\\"~~g' \
 	-e 's~<a .*\(href="[^"]*\).*</a>~\1~g' \
 	-e 's~href="~~g')
-	if [[ `uname -s` == "Darwin" ]] ; then
+	if [[ $(uname -s) == "Darwin" ]] ; then
 		__content=$(echo "$__content" | sed \
 		-e 's/<p>/\\\n\\\n/g' \
 		-e 's/<br>/\\\n\\\n/g' \
@@ -251,14 +265,20 @@ function __resolvetcolinks {
 	# translate https://t.co links into destination URLs
 	# $1 is the tweet text in which to resolve t.co links
 	local __content="$1"
-	local foundlinks=( `grep -o 'https://t.co/[a-zA-Z0-9]*' <<< "$__content"` )
+	# shellcheck disable=SC2207
+	local foundlinks=( $(grep -o 'https://t.co/[a-zA-Z0-9]*' <<< "$__content") )
 	for link in "${foundlinks[@]}" ; do
-		resultinglink=`curl -s -D - "$link" | grep location: | sed 's/^location: //g' | tr '\r' ' '`
-		resultinglink=`sed 's/\&/%26/g' <<< "$resultinglink"`
-		resultinglink=`sed 's/~/%7e/g' <<< "$resultinglink"`
-		__content=`sed -- 's~'"$link"'~'"$resultinglink"'~g' <<< "$__content"`
-		__content=`sed 's/%26/\&/g' <<< "$__content"`
-		__content=`sed 's/%7e/~/g' <<< "$__content"`
+		resultinglink=$(curl -s -D - "$link" | grep location: | sed 's/^location: //g' | tr '\r' ' ')
+		# shellcheck disable=SC2001
+		resultinglink=$(sed 's/\&/%26/g' <<< "$resultinglink")
+		# shellcheck disable=SC2001
+		resultinglink=$(sed 's/~/%7e/g' <<< "$resultinglink")
+		# shellcheck disable=SC2001
+		__content=$(sed -- 's~'"$link"'~'"$resultinglink"'~g' <<< "$__content")
+		# shellcheck disable=SC2001
+		__content=$(sed 's/%26/\&/g' <<< "$__content")
+		# shellcheck disable=SC2001
+		__content=$(sed 's/%7e/~/g' <<< "$__content")
 	done
 	echo "$__content"
 }
@@ -273,7 +293,8 @@ function __printtweet {
 
 	# handle indent
 	local indent=
-	if [[ $4 -gt 0 ]] ; then indent="`printf "%0.s " $(seq 1 $4)`" ; fi
+	# shellcheck disable=SC2086
+	if [[ $4 -gt 0 ]] ; then indent="$(printf "%0.s " $(seq 1 $4))" ; fi
 
 	# handle text
 	local text="$1"
@@ -289,13 +310,16 @@ function __printtweet {
 
 	# handle timestamp
 	if [[ "$3" == ABSOLUTE* ]] ; then
-		local epochtime=`__iso2epoch "${3#*ABSOLUTE}"`
-		local e=( `date -j -f '%s' "$epochtime" '%a %b %d %X %z %Y'|| date -d "$epochtime" +'%a %b %d %X %z %Y'` )
-		local timestr="| ${__yellow}${e[1]} ${e[2]}, ${e[5]} @ ${e[3]}${__reset}"
+		local epochtime e timestr
+		epochtime=$(__iso2epoch "${3#*ABSOLUTE}")
+		# shellcheck disable=SC2207
+		e=( $(date -j -f '%s' "$epochtime" '%a %b %d %X %z %Y' || date -d "$epochtime" +'%a %b %d %X %z %Y') )
+		timestr="| ${__yellow}${e[1]} ${e[2]}, ${e[5]} @ ${e[3]}${__reset}"
 	elif [[ "$3" == "" || "$3" == "null" ]] ; then
 		local timestr=""
 	else
-		local timestamp="`__resolvetime "$3"` ago"
+		local timestamp
+		timestamp="$(__resolvetime "$3") ago"
 		local timestr="| ${__yellow}${timestamp}${__reset}"
 	fi
 
@@ -308,11 +332,11 @@ function __printtweet {
 	if [[ "$indent" == "" ]] ; then
 		echo -n "➤ "
 		echo -e "${__teal}${author}${__reset} ${timestr} ${linktext}" | sed "s/^/${indent}/"
-		indent="`printf "%0.s " $(seq 1 2)`"
+		indent="$(printf "%0.s " $(seq 1 2))"
 	else
 		echo -e "${__teal}${author}${__reset} ${timestr} ${linktext}" | sed "s/^/${indent}/"
 	fi
-	echo -e "${__italics}`__cleantext "$text"`${__reset}" | fold -w 80 -s | sed "s/^/${indent}/"
+	echo -e "${__italics}$(__cleantext "$text")${__reset}" | fold -w 80 -s | sed "s/^/${indent}/"
 }
 
 function __listenexit {
@@ -331,28 +355,37 @@ function __processtweets {
 	local link="$3"
 
 	for row in $(jq -r '.[] | @base64' <<< "$response") ; do
+		local text dt handle
+
 		function __jq {
-			base64 --decode <<< "$row" | jq -r ${1}
+			base64 --decode <<< "$row" | jq -r "$1"
 		}
-		if [[ `jq 'has("retweeted_status")' <<< "$(base64 --decode <<< "$row")"` == "true" ]] ; then
-			local text="RT @`__jq '.retweeted_status.user.screen_name'` `__jq '.retweeted_status.full_text'`"
+
+		if [[ $(jq 'has("retweeted_status")' <<< "$(base64 --decode <<< "$row")") == "true" ]] ; then
+			text="RT @$(__jq '.retweeted_status.user.screen_name') $(__jq '.retweeted_status.full_text')"
 		else
-			local text="`__jq '.full_text'`"
+			text="$(__jq '.full_text')"
 		fi
-		local dt="`__jq '.created_at'`"
+
+		dt="$(__jq '.created_at')"
 		if [[ "$absolute" -eq 1 ]] ; then
 			dt="ABSOLUTE$dt"
 		fi
-		local handle="@`__jq '.user.screen_name'`"
+
+		handle="@$(__jq '.user.screen_name')"
+
 		if [[ $link -eq 1 ]] ; then
-			local linktext="https://twitter.com/${handle:1}/status/`__jq '.id_str'`"
+			local linktext
+			linktext="https://twitter.com/${handle:1}/status/$(__jq '.id_str')"
 		fi
-		local replytweet="`__jq '.in_reply_to_status_id_str'`"
+
+		local replytweet __response __author __text __dt
+		replytweet="$(__jq '.in_reply_to_status_id_str')"
 		if [[ "$replytweet" != "null" ]] ; then
-			local __response=`__twurl -n "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true&tweet_mode=extended"`
-			local __author="`__jq '.in_reply_to_screen_name'`"
-			local __text="`jq -r '.full_text' <<< "$__response"`"
-			local __dt="`jq -r '.created_at' <<< "$__response"`"
+			__response=$(__twurl -n "https://api.twitter.com/1.1/statuses/show.json?id=${replytweet}&trim_user=true&tweet_mode=extended")
+			__author="$(__jq '.in_reply_to_screen_name')"
+			__text="$(jq -r '.full_text' <<< "$__response")"
+			__dt="$(jq -r '.created_at' <<< "$__response")"
 			if [[ "$absolute" -eq 1 ]] ; then
 				__dt="ABSOLUTE$__dt"
 			fi
@@ -416,9 +449,10 @@ function __resolvelanguage {
 			return 1
 		fi
 	else
+		local code key query
 		for code in "${codes[@]}" ; do
-			local key="`tr '[A-Z]' '[a-z]' <<< "$code"`"
-			local query="`tr '[A-Z]' '[a-z]' <<< "$1"`"
+			key="$(tr '[:upper:]' '[:lower:]' <<< "$code")"
+			query="$(tr '[:upper:]' '[:lower:]' <<< "$1")"
 			if [[ "${key%:*}" == "$query" ]] ; then
 				abbr="${key#*:}"
 				break
@@ -452,8 +486,9 @@ function __stopspin {
 
 function __listen {
 	# internal command for listening to tweets
-	local timestamps=( )
+	local timestamps=()
 	local apiendpoint=
+	# shellcheck disable=SC2154
 	for item in "${source[@]}" ; do
 		# configure API endpoint
 		if [[ "${item:0:1}" == "@" ]] ; then
@@ -478,19 +513,20 @@ function __listen {
 		apiendpoint="${apiendpoint}${langtext}"
 
 		# get API response
-		response=`__twurl "$apiendpoint"`
+		response=$(__twurl "$apiendpoint")
 		if [[ "${item:0:1}" == '#' ]] ; then
-			response="`jq -r '.statuses' <<< "$response"`"
+			response="$(jq -r '.statuses' <<< "$response")"
 		fi
 
 		for row in $(jq -r '.[] | @base64' <<< "$response") ; do
 			function __jq {
-				base64 --decode <<< "$row" | jq -r ${1}
+				base64 --decode <<< "$row" | jq -r "$1"
 			}
 
 			# get timestamp and ID
-			local ts=$(__iso2epoch "`__jq '.created_at'`")
-			local id=`__jq '.id'`
+			local ts id
+			ts=$(__iso2epoch "$(__jq '.created_at')")
+			id=$(__jq '.id')
 
 			# don't repeat found tweets
 			if [[ "$seentweets" == *$id* ]] ; then
@@ -509,13 +545,13 @@ function __listen {
 			for i in "${!tweetbuffer[@]}" ; do
 				if [[ "${timestamps[$i]}" -gt "$ts" ]] ; then
 					placed=1
-					tweetbuffer=( "${tweetbuffer[@]:0:$i}" "[`base64 --decode <<< "$row"`]" "${tweetbuffer[@]:$i}" )
+					tweetbuffer=( "${tweetbuffer[@]:0:$i}" "[$(base64 --decode <<< "$row")]" "${tweetbuffer[@]:$i}" )
 					timestamps=( "${timestamps[@]:0:$i}" "$ts" "${timestamps[@]:$i}" )
 					break
 				fi
 			done
 			if [[ $placed -eq 0 ]] ; then
-				tweetbuffer=( "${tweetbuffer[@]}" "[`base64 --decode <<< "$row"`]" )
+				tweetbuffer=( "${tweetbuffer[@]}" "[$(base64 --decode <<< "$row")]" )
 				timestamps=( "${timestamps[@]}" "$ts" )
 			fi
 		done
@@ -534,6 +570,7 @@ function init {
 
 	__verifyjq
 
+	# shellcheck disable=SC2154
 	if [[ "$force" -eq 0 ]] ; then
 		if [[ -d ~/.birdhouse ]] ; then
 			__errortext "$koiname: err: birdhouse is already initialized"
@@ -544,11 +581,14 @@ function init {
 
 	local __apikey=
 	local __secretkey=
+	# shellcheck disable=SC2154
 	if [[ "$usefiles" -eq 1 ]] ; then
+		# shellcheck disable=SC2154
 		if [[ ! -f "$apikey" ]] ; then __errortext "$koiname: err: no such file '$apikey'" ; return 1 ; fi
+		# shellcheck disable=SC2154
 		if [[ ! -f "$secretkey" ]] ; then __errortext "$koiname: err: no such file '$secretkey'" ; return 1 ; fi
-		__apikey="`cat "$apikey"`"
-		__secretkey="`cat "$secretkey"`"
+		__apikey="$(cat "$apikey")"
+		__secretkey="$(cat "$secretkey")"
 	else
 		__apikey="$apikey"
 		__secretkey="$secretkey"
@@ -619,17 +659,20 @@ function listen {
 		fi
 	done
 
+	# shellcheck disable=SC2154
 	if [[ "$refresh" -lt 1 ]] ; then __errortext "$koiname: err: minimum refresh rate is 1 second" ; return 1 ; fi
 
 	# resolve language
 	local langtext=
+	# shellcheck disable=SC2154
 	if [[ "$language" != "" ]] ; then
-		if [[ "${source[@]}" == *@* ]] ; then
+		if [[ "${source[*]}" == *@* ]] ; then
+			# shellcheck disable=SC2154
 			if [[ "$quiet" -eq 0 ]] ; then
 				__errortext "warning: --language flag is irrelevant for Twitter handles"
 			fi
 		fi
-		resolvedlanguage=`__resolvelanguage "$language"`
+		resolvedlanguage=$(__resolvelanguage "$language")
 		if [[ "$resolvedlanguage" == "" ]] ; then return 1 ; fi
 		langtext="&lang=${resolvedlanguage}"
 	fi
@@ -667,6 +710,7 @@ function listen {
 		nowtext=" from now"
 	fi
 	local filtertext=
+	# shellcheck disable=SC2154
 	if [[ "$filter" != "" ]] ; then
 		filtertext=" containing"
 		for f in "${filter[@]}" ; do
@@ -696,7 +740,7 @@ function listen {
 			if [[ "$filter" != "" ]] ; then
 				local found=0
 				for f in "${filter[@]}" ; do
-					if grep "$f" <<< "`jq '.[0].full_text' <<< "$tweet"`" >/dev/null ; then
+					if grep "$f" <<< "$(jq '.[0].full_text' <<< "$tweet")" >/dev/null ; then
 						found=1
 						break
 					fi
@@ -705,6 +749,7 @@ function listen {
 					continue
 				fi
 			fi
+			# shellcheck disable=SC2154
 			__processtweets "$tweet" "$absolute" "$url"
 		done
 		__startspin
@@ -735,17 +780,18 @@ function chirps {
 		fi
 	done
 
+	# shellcheck disable=SC2154
 	if [[ "$num" -gt 200 ]] ; then __errortext "$koiname: err: cannot get more than 200 chirps per source" ; return 1 ;fi
 
 	# resolve language
 	local langtext=
 	if [[ "$language" != "" ]] ; then
-		if [[ "${source[@]}" == *@* ]] ; then
+		if [[ "${source[*]}" == *@* ]] ; then
 			if [[ "$quiet" -eq 0 ]] ; then
 				__errortext "warning: --language flag is irrelevant for Twitter handles"
 			fi
 		fi
-		resolvedlanguage=`__resolvelanguage "$language"`
+		resolvedlanguage=$(__resolvelanguage "$language")
 		if [[ "$resolvedlanguage" == "" ]] ; then return 1 ; fi
 		langtext="&lang=${resolvedlanguage}"
 	fi
@@ -759,12 +805,12 @@ function chirps {
 			if [[ "$omitreplies" -eq 1 ]] ; then
 				apiendpoint="${apiendpoint}&exclude_replies=true"
 			fi
-			response=`__twurl "$apiendpoint"`
+			response=$(__twurl "$apiendpoint")
 			__processtweets "$response" "$absolute" "$link"
 		else
 			apiendpoint="https://api.twitter.com/1.1/search/tweets.json?q=%23${item:1}&tweet_mode=extended&count=${num}${langtext}"
-			response=`__twurl "$apiendpoint"`
-			__processtweets "`jq -r '.statuses' <<< "$response"`" "$absolute" "$url"
+			response=$(__twurl "$apiendpoint")
+			__processtweets "$(jq -r '.statuses' <<< "$response")" "$absolute" "$url"
 		fi
 	done
 }
@@ -779,22 +825,25 @@ function bird {
 	__verifycredentials
 
 	# verify handles are formatted correctly
+	# shellcheck disable=SC2154
 	for handle in "${bird[@]}" ; do
 		if [[ "$handle" != @* ]] ; then __errortext "$koiname: err: Twitter handles must start with '@'" ; return 1 ; fi
 	done
 
+	local response name screenname location bio followers friends tweets createdat
 	for handle in "${bird[@]}" ; do
 		# get handle information, parse JSON
-		local response=`__twurl "https://api.twitter.com/1.1/users/lookup.json?screen_name=${handle:1}"`
-		local name="`jq -r '.[0].name' <<< "$response"`"
-		local screenname="`jq -r '.[0].screen_name' <<< "$response"`"
-		local location="`jq -r '.[0].location' <<< "$response"`"
-		local bio="`jq -r '.[0].description' <<< "$response"`"
-		local followers="`jq -r '.[0].followers_count' <<< "$response"`"
-		local friends="`jq -r '.[0].friends_count' <<< "$response"`"
-		local tweets="`jq -r '.[0].statuses_count' <<< "$response"`"
-		local createdat=( `jq -r '.[0].created_at' <<< "$response"` )
-		if [[ "$name" == "" || "$name" == "null" ]] && [[ "$screen_name" == "" || "$screen_name" == "null" ]]; then
+		response=$(__twurl "https://api.twitter.com/1.1/users/lookup.json?screen_name=${handle:1}")
+		name="$(jq -r '.[0].name' <<< "$response")"
+		screenname="$(jq -r '.[0].screen_name' <<< "$response")"
+		location="$(jq -r '.[0].location' <<< "$response")"
+		bio="$(jq -r '.[0].description' <<< "$response")"
+		followers="$(jq -r '.[0].followers_count' <<< "$response")"
+		friends="$(jq -r '.[0].friends_count' <<< "$response")"
+		tweets="$(jq -r '.[0].statuses_count' <<< "$response")"
+		# shellcheck disable=SC2207
+		createdat=( $(jq -r '.[0].created_at' <<< "$response") )
+		if [[ "$name" == "" || "$name" == "null" ]] && [[ "$screenname" == "" || "$screenname" == "null" ]]; then
 			return 1
 		fi
 
@@ -846,6 +895,7 @@ function bird {
 		fi
 
 		# creation date
+		# shellcheck disable=SC2128
 		if [[ "$createdat" != "" ]] ; then
 			echo -e "  created on ${__teal}${createdat[1]} ${createdat[2]}, ${createdat[5]}${__reset}"
 		fi
