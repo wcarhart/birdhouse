@@ -1,4 +1,6 @@
 #!/bin/bash
+# shellcheck disable=SC2016
+
 set -e
 
 # shellcheck disable=SC1091
