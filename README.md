@@ -9,7 +9,7 @@ Install with homebrew:
 brew tap wcarhart/tools
 brew install birdhouse
 ```
-Birdhouse replies on the Twitter API. You'll need proper API credentials to use it. If you need an API key, get one [here](https://developer.twitter.com/en/apply-for-access).
+Birdhouse relies on the Twitter API. You'll need proper API credentials to use it. If you need an API key, get one [here](https://developer.twitter.com/en/apply-for-access).
 
 Install your API keys with the `birdhouse init` command:
 ```bash
